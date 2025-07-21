@@ -39,7 +39,7 @@ async function handleDeleteUserSelect(interaction) {
     studentActiveQueue.delete(`${serverId}:${uid}`);
   }
   // Refresh both panels
-  await refreshPanels(interaction.guild, interaction);
+  await refreshPanels(interaction.guild);
   const mentions = interaction.values.map(id => `<@${id}>`).join(', ');
   await interaction.editReply({ content: `🗑️ Removed ${mentions} from **${queueName}**.` });
 }
@@ -368,7 +368,7 @@ async function handleLeaveQueue(interaction, user, guild) {
       await removeStudent(guild.id, q.queue_name, user.id);
     }
     // Refresh both panels
-    await refreshPanels(guild, interaction);
+    await refreshPanels(guild);
     return interaction.editReply({
       content: '✅ You have been removed from all queues you were in.'
     });
