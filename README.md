@@ -10,8 +10,10 @@ A Discord bot that uses OpenAI and Postgres.
    - `CLIENT_ID`
    - `DATABASE_URL`
    - `GUILD_ID` (optional)
-   - `OPENAI_API_KEY` or `ACCESS_TOKEN_OPENAI`
+   - `OPENAI_API_KEY`
 3. Start the bot with `npm start`.
+
+The bot reads the `OPENAI_API_KEY` environment variable for OpenAI access.
 
 ## Heroku deployment
 
