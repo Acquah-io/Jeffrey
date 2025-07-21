@@ -117,7 +117,6 @@ const STUDENT_MESSAGE =
 "**2️⃣ /askquestion** – Ask staff or mentors a question.\n" +
 "**3️⃣ /resources** – Access helpful resources.\n\n" +
 "## Conversation‑history queries _(ask these in a DM to Jeffrey)_\n" +
-"## Conversation-history queries _(ask these in a DM to Jeffrey)_\n" +
 "• **Who asked about \\\"something\\\" in the chat?**\n" +
 "• **When was \\\"something\\\" last mentioned?**\n" +
 "• **Who said \\\"something\\\" in the chat?**\n" +
