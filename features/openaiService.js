@@ -6,6 +6,8 @@ let log = [{ role: "system", content: "You are a general friendly assistant who 
 
 module.exports.getOpenAIResponse = async (userMessage, maxTokens = 1000) => {
   log.push({ role: "user", content: userMessage });
+  // Keep only the most recent ~20 messages to avoid unbounded growth
+  if (log.length > 20) log.shift();
   const completion = await openai.chat.completions.create({
     messages: log,
     model: "gpt-4o",
@@ -13,5 +15,6 @@ module.exports.getOpenAIResponse = async (userMessage, maxTokens = 1000) => {
   });
   const response = completion.choices[0].message.content;
   log.push({ role: "system", content: response });
+  if (log.length > 20) log.shift();
   return response;
 };
