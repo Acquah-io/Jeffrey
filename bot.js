@@ -38,7 +38,6 @@ const handleGeneralQuestion = require('./features/generalQuestion');
 const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
-const studyTips = require('./features/studyTips');
 
 const clientDB = require('./database');
 
@@ -344,8 +343,6 @@ client.once('ready', async () => {
         await backfillGuildHistory(guild);
         console.log(`Backfill complete for ${guild.name}.`);
     }
-
-    studyTips.setupStudyTips(client);
 });
 
 /**
