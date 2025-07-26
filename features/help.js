@@ -44,6 +44,7 @@ module.exports = {
           { name: '/createevent', value: 'Create a new event for the server.' },
           { name: '/manageusers', value: 'Manage user permissions and roles.' },
           { name: '/staffstats',  value: 'View staff-specific statistics.' },
+          { name: 'Polls',        value: 'Use the **Create Poll** button in #polls.' },
         )
         .setFooter({ text: 'For further assistance, contact the server admin.' });
 
@@ -59,6 +60,7 @@ module.exports = {
           { name: '/viewevents',  value: 'View upcoming events on the server.' },
           { name: '/askquestion', value: 'Ask a question to staff or mentors.' },
           { name: '/resources',   value: 'Get helpful resources and links.' },
+          { name: 'Polls',        value: 'Vote in polls from the #polls channel.' },
         )
         .setFooter({ text: 'For further assistance, contact a staff member.' });
 
