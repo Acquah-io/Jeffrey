@@ -56,10 +56,12 @@ async function handleCreatePollButton(interaction) {
     // 40060 = double‑ack, 10062 = interaction token expired/invalid
     if (err.code === 10062) {
       console.warn('Create‑poll interaction expired before showModal could run. Ask user to click again.');
+      const msg = `⏱️ <@${interaction.user.id}>, that interaction expired. Please click **Create Poll** again.`;
       try {
-        // We cannot reply to the interaction anymore; keep it quiet for users.
-        // Optionally, you could notify the user via a follow‑up channel message.
-      } catch (_) {}
+        await interaction.followUp({ content: msg });
+      } catch (followErr) {
+        try { await interaction.channel.send(msg); } catch (_) {}
+      }
       return;
     }
     if (err.code !== 40060) {
