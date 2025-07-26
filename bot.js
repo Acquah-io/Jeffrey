@@ -35,7 +35,7 @@ const assignRolesToMember = require('./assignRoles.js');
 const handleCodeReview = require('./features/codeReview');
 const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
-const { handleCreatePollButton, handleCreatePollSubmit } = require('./features/pollManager');
+const { handleCreatePollButton, handleCreatePollSubmit, handleClosePollButton, handleVoteSelectMenu } = require('./features/pollManager');
 const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
@@ -922,6 +922,15 @@ client.on('interactionCreate', async (interaction) => {
     //if (!interaction.customId.startsWith('queue-')) return;
 
     const { customId, user, guild } = interaction;
+
+    if (customId.startsWith('close-poll:')) {
+        await handleClosePollButton(interaction);
+        return;
+    }
+    if (customId.startsWith('vote-poll:')) {
+        await handleVoteSelectMenu(interaction);
+        return;
+    }
 
     try {
         // // Defer the reply to avoid timeout errors and allow time to respond later
