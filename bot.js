@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -164,6 +164,7 @@ async function refreshChannels(guild) {
     // Re-ensure that the student and staff channels are set up with updated permissions and documentation
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await ensurePollChannel(guild);
     await setupDocumentationChannels(guild);
 }
 
@@ -353,7 +354,7 @@ client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
-    await ensureQueueChannel(guild);
+    await ensurePollChannel(guild);
 });
 
 /**
@@ -538,6 +539,59 @@ async function ensureStaffQueueChannel(guild) {
             return staffQueueChannel;
     } catch (error) {
         console.error(`Failed to ensure "staff-queues" channel for ${guild.name}:`, error);
+    }
+}
+
+/**
+ * Ensures the 'polls' channel exists with a pinned Create Poll button.
+ */
+async function ensurePollChannel(guild) {
+    try {
+        let pollChannel = guild.channels.cache.find(
+            ch => ch.name === 'polls' && ch.type === ChannelType.GuildText
+        );
+        if (!pollChannel) {
+            console.log(`Creating "polls" channel in ${guild.name}...`);
+            pollChannel = await guild.channels.create({
+                name: 'polls',
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.id, allow: ['ViewChannel', 'SendMessages'] },
+                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] }
+                ]
+            });
+            console.log(`Created "polls" channel in ${guild.name} (${pollChannel.id})`);
+        }
+
+        const botId = client.user.id;
+        if (!pollChannel.permissionOverwrites.cache.has(botId)) {
+            await pollChannel.permissionOverwrites.edit(botId, {
+                ViewChannel: true,
+                SendMessages: true,
+                ManageMessages: true,
+                ManageChannels: true
+            });
+        }
+
+        const buttonRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('create-poll')
+                .setLabel('Create Poll')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        const pinned = await pollChannel.messages.fetchPinned();
+        let msg = pinned.find(m => m.components?.[0]?.components?.[0]?.customId === 'create-poll');
+        if (msg) {
+            await msg.edit({ content: 'Press the button to create a new poll.', components: [buttonRow] });
+        } else {
+            msg = await pollChannel.send({ content: 'Press the button to create a new poll.', components: [buttonRow] });
+            await msg.pin();
+        }
+
+        return pollChannel;
+    } catch (error) {
+        console.error(`Failed to ensure "polls" channel for ${guild.name}:`, error);
     }
 }
 
