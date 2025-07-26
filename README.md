@@ -18,3 +18,7 @@ The bot reads the `OPENAI_API_KEY` environment variable for OpenAI access.
 ## Heroku deployment
 
 Heroku reads the `Procfile` and runs `npm start` continuously. Set the same environment variables in the Heroku dashboard and the bot will stay online as long as the dyno is running.
+
+## Commands
+
+- `/studyroom` – create a temporary voice channel for students. The room is automatically deleted after a specified number of minutes (default 60).
