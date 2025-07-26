@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -35,6 +35,7 @@ const assignRolesToMember = require('./assignRoles.js');
 const handleCodeReview = require('./features/codeReview');
 const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
+const { handleCreatePollButton, handleCreatePollSubmit, handleClosePollButton, handleVoteSelectMenu } = require('./features/pollManager');
 const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
@@ -163,6 +164,7 @@ async function refreshChannels(guild) {
     // Re-ensure that the student and staff channels are set up with updated permissions and documentation
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await ensurePollChannel(guild);
     await setupDocumentationChannels(guild);
 }
 
@@ -352,7 +354,7 @@ client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
-    await ensureQueueChannel(guild);
+    await ensurePollChannel(guild);
 });
 
 /**
@@ -537,6 +539,59 @@ async function ensureStaffQueueChannel(guild) {
             return staffQueueChannel;
     } catch (error) {
         console.error(`Failed to ensure "staff-queues" channel for ${guild.name}:`, error);
+    }
+}
+
+/**
+ * Ensures the 'polls' channel exists with a pinned Create Poll button.
+ */
+async function ensurePollChannel(guild) {
+    try {
+        let pollChannel = guild.channels.cache.find(
+            ch => ch.name === 'polls' && ch.type === ChannelType.GuildText
+        );
+        if (!pollChannel) {
+            console.log(`Creating "polls" channel in ${guild.name}...`);
+            pollChannel = await guild.channels.create({
+                name: 'polls',
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.id, allow: ['ViewChannel', 'SendMessages'] },
+                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] }
+                ]
+            });
+            console.log(`Created "polls" channel in ${guild.name} (${pollChannel.id})`);
+        }
+
+        const botId = client.user.id;
+        if (!pollChannel.permissionOverwrites.cache.has(botId)) {
+            await pollChannel.permissionOverwrites.edit(botId, {
+                ViewChannel: true,
+                SendMessages: true,
+                ManageMessages: true,
+                ManageChannels: true
+            });
+        }
+
+        const buttonRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('create-poll')
+                .setLabel('Create Poll')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        const pinned = await pollChannel.messages.fetchPinned();
+        let msg = pinned.find(m => m.components?.[0]?.components?.[0]?.customId === 'create-poll');
+        if (msg) {
+            await msg.edit({ content: 'Press the button to create a new poll.', components: [buttonRow] });
+        } else {
+            msg = await pollChannel.send({ content: 'Press the button to create a new poll.', components: [buttonRow] });
+            await msg.pin();
+        }
+
+        return pollChannel;
+    } catch (error) {
+        console.error(`Failed to ensure "polls" channel for ${guild.name}:`, error);
     }
 }
 
@@ -801,6 +856,14 @@ async function handleHistorySlash(interaction) {
  */
 client.on('interactionCreate', async (interaction) => {
 
+    // Debug: log if this interaction arrives "late" (close to the 3s response window)
+    try {
+      const age = Date.now() - (interaction.createdTimestamp || Date.now());
+      if (age > 2000) {
+        console.warn('Late interaction detected:', interaction.type, 'age(ms)=', age, 'id=', interaction.id);
+      }
+    } catch (_) {}
+
     // ─── Slash commands ────────────────────────────────
     if (interaction.isChatInputCommand()) {
         // /smart_search is implemented as a bespoke handler
@@ -837,6 +900,10 @@ client.on('interactionCreate', async (interaction) => {
         await handleEditQueueModal(interaction);
         return;
     }
+    if (interaction.isModalSubmit() && interaction.customId === 'create-poll') {
+        await handleCreatePollSubmit(interaction);
+        return;
+    }
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
 
@@ -856,11 +923,23 @@ client.on('interactionCreate', async (interaction) => {
 
     const { customId, user, guild } = interaction;
 
+    if (customId.startsWith('close-poll:')) {
+        await handleClosePollButton(interaction);
+        return;
+    }
+    if (customId.startsWith('vote-poll:')) {
+        await handleVoteSelectMenu(interaction);
+        return;
+    }
+
     try {
         // // Defer the reply to avoid timeout errors and allow time to respond later
         // await interaction.deferReply({ ephemeral: true });
 
         switch (customId) {
+            case 'create-poll':
+                await handleCreatePollButton(interaction);
+                return;
             /* ---------- Student selectors & buttons ---------- */
             case 'student-queue-selector':
                 await handleStudentQueueSelect(interaction);
@@ -909,21 +988,34 @@ client.on('interactionCreate', async (interaction) => {
                 break;
 
           /* ---------- Fallback ---------- */
-          default:
-              await interaction.reply({ content: '⛔ Unknown interaction.', ephemeral: true });
+          default: {
+              // If another handler already acknowledged (e.g. showed a modal), do nothing
+              if (interaction.deferred || interaction.replied) break;
+              console.warn('Unknown interaction for customId:', customId, 'type:', interaction.component?.type ?? 'n/a', 'id=', interaction.id);
+              // Avoid spamming users with ephemerals for unknown component interactions
               break;
+          }
           }
     } catch (error) {
         console.error('Error handling interaction:', error);
 
-        // Only follow up if deferReply succeeded
-        if (interaction.deferred && !interaction.replied) {
-            await interaction.editReply({ content: 'An error occurred while processing your request.' });
-        } else if (!interaction.replied) {
-            await interaction.reply({ content: 'An error occurred while processing your request.', ephemeral: true });
-        } else {
-            // If already replied, optionally log or ignore
-            console.warn('Could not send error message — interaction already replied.');
+        // Ignore double‑acknowledgement errors (e.g. after showModal)
+        if (error && (error.code === 40060 || (typeof error.message === 'string' && error.message.includes('already been acknowledged')))) {
+            return;
+        }
+
+        try {
+            if (interaction.deferred && !interaction.replied) {
+                await interaction.editReply({ content: 'An error occurred while processing your request.' });
+            } else if (!interaction.replied) {
+                await interaction.reply({ content: 'An error occurred while processing your request.', flags: 64 });
+            } else {
+                console.warn('Could not send error message — interaction already replied.');
+            }
+        } catch (e) {
+            if (e.code !== 40060) {
+                console.error('Failed to send error message:', e);
+            }
         }
     }
 });
