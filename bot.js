@@ -844,6 +844,8 @@ client.on('interactionCreate', async (interaction) => {
         await handleEditQueueModal(interaction);
         return;
     }
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('study-')) {
+        await studyTips.handleStudyTipSelect(interaction);
     if (interaction.isModalSubmit() && interaction.customId.startsWith('study-')) {
         await studyTips.handleStudyTipModal(interaction);
         return;

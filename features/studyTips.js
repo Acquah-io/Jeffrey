@@ -138,7 +138,6 @@ for (let i = 0; i < tipCount; i++) {
   chosen.push(tips[Math.floor(Math.random() * tips.length)]);
 }
 const msg = chosen.map((t, i) => `${i + 1}. ${t}`).join('\n');
-
     for (const guild of client.guilds.cache.values()) {
       const studentRole = guild.roles.cache.find(r => r.name === 'Students');
       if (!studentRole) continue;
@@ -197,6 +196,7 @@ function buildComponents() {
     new ButtonBuilder()
       .setCustomId(config.enabled ? 'study-disable' : 'study-enable')
       .setLabel(config.enabled ? 'Disable' : 'Enable')
+      .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
       .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('study-settime')
@@ -226,6 +226,55 @@ function buildComponents() {
       { label: 'Saturday', value: '6', default: config.dayOfWeek === 6 }
     );
 
+  const hourMenu = new StringSelectMenuBuilder()
+    .setCustomId('study-hour-select')
+    .setPlaceholder('Hour (UTC)')
+    .addOptions(
+      Array.from({ length: 24 }, (_, i) => ({
+        label: String(i).padStart(2, '0'),
+        value: String(i),
+        default: config.hour === i,
+      }))
+    );
+
+  const minuteMenu = new StringSelectMenuBuilder()
+    .setCustomId('study-minute-select')
+    .setPlaceholder('Minute')
+    .addOptions(
+      Array.from({ length: 12 }, (_, i) => i * 5).map((m) => ({
+        label: String(m).padStart(2, '0'),
+        value: String(m),
+        default: config.minute === m,
+      }))
+    );
+
+  const freqMenu = new StringSelectMenuBuilder()
+    .setCustomId('study-freq-select')
+    .setPlaceholder('Frequency (days)')
+    .addOptions(
+      Array.from({ length: 7 }, (_, i) => i + 1).map((d) => ({
+        label: String(d),
+        value: String(d),
+        default: config.days === d,
+      }))
+    );
+
+  const countMenu = new StringSelectMenuBuilder()
+    .setCustomId('study-count-select')
+    .setPlaceholder('Tips per send')
+    .addOptions(
+      Array.from({ length: 5 }, (_, i) => i + 1).map((c) => ({
+        label: String(c),
+        value: String(c),
+        default: config.count === c,
+      }))
+    );
+
+  const row2 = new ActionRowBuilder().addComponents(dayMenu);
+  const row3 = new ActionRowBuilder().addComponents(hourMenu, minuteMenu);
+  const row4 = new ActionRowBuilder().addComponents(freqMenu);
+  const row5 = new ActionRowBuilder().addComponents(countMenu);
+  return [row1, row2, row3, row4, row5];
   const row2 = new ActionRowBuilder().addComponents(dayMenu);
   return [row1, row2];
 }
@@ -356,6 +405,43 @@ module.exports = {
   await refreshPanel(interaction.guild);
 }
 
+async function handleStudyTipSelect(interaction) {
+  if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
+    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+  }
+  const val = interaction.values[0];
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let msg;
+  switch (interaction.customId) {
+    case 'study-day-select':
+      config.dayOfWeek = val === 'none' ? null : parseInt(val, 10);
+      msg = val === 'none'
+        ? 'Tips will send based on frequency.'
+        : `Study tips will send on ${dayNames[config.dayOfWeek]}.`;
+      break;
+    case 'study-hour-select':
+      config.hour = parseInt(val, 10);
+      msg = `Hour set to ${String(config.hour).padStart(2, '0')} UTC.`;
+      break;
+    case 'study-minute-select':
+      config.minute = parseInt(val, 10);
+      msg = `Minute set to ${String(config.minute).padStart(2, '0')}.`;
+      break;
+    case 'study-freq-select':
+      config.days = parseInt(val, 10);
+      msg = `Frequency set to every ${config.days} day(s).`;
+      break;
+    case 'study-count-select':
+      config.count = parseInt(val, 10);
+      msg = `Each reminder will contain ${config.count} tip(s).`;
+      break;
+    default:
+      return;
+  }
+  saveConfig();
+  scheduleNext(interaction.client);
+  await interaction.reply({ content: msg, ephemeral: true });
+
 async function handleStudyTipModal(interaction) {
   if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
     return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
@@ -413,9 +499,9 @@ module.exports = {
   setupStudyTips,
   ensureSettingsChannel,
   handleStudyTipButton,
+  handleStudyTipSelect,
   handleStudyTipModal,
   handleDaySelect,
-=======
     if (sub === 'count') {
       const c = interaction.options.getInteger('count');
       if (c < 1) return interaction.reply({ content: '⛔ Count must be at least 1.', ephemeral: true });
