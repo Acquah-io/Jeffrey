@@ -24,5 +24,6 @@ Heroku reads the `Procfile` and runs `npm start` continuously. Set the same envi
 ## Study tips
 
 A dedicated `#study-tip-settings` channel lets staff control how often tips are sent.
+The pinned panel provides dropdown menus for the hour, minute, frequency and tip count. Each menu's options include units (e.g. `09 h`, `30 min`) so it's clear what you're setting. New tips are generated with ChatGPT and are delivered to every student via DM.
 The pinned panel provides dropdown menus for the hour, minute, frequency and tip count. New tips are generated with ChatGPT and are delivered to every student via DM.
 The pinned panel provides dropdown menus for the hour, minute, frequency and tip count, plus a day-of-week selector. New tips are generated with ChatGPT and are delivered to every student via DM.

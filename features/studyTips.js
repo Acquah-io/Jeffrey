@@ -170,7 +170,9 @@ function buildEmbed() {
     `**Time (UTC):** ${String(config.hour).padStart(2, '0')}:${String(config.minute).padStart(2, '0')}`,
     `**Every:** ${config.days} day(s)`,
     `**Tips per send:** ${config.count}`,
-    `**Next send:** ${next.toUTCString()}`
+    `**Next send:** ${next.toUTCString()}`,
+    '',
+    'Use the dropdowns below to adjust the hour, minute, frequency and tip count.'
   ].join('\n');
   return new EmbedBuilder()
     .setTitle('Study Tip Settings')
@@ -192,7 +194,7 @@ function buildComponents() {
     .setPlaceholder('Hour (UTC)')
     .addOptions(
       Array.from({ length: 24 }, (_, i) => ({
-        label: String(i).padStart(2, '0'),
+        label: `${String(i).padStart(2, '0')} h`,
         value: String(i),
         default: config.hour === i,
       }))
@@ -203,7 +205,7 @@ function buildComponents() {
     .setPlaceholder('Minute')
     .addOptions(
       Array.from({ length: 12 }, (_, i) => i * 5).map((m) => ({
-        label: String(m).padStart(2, '0'),
+        label: `${String(m).padStart(2, '0')} min`,
         value: String(m),
         default: config.minute === m,
       }))
@@ -214,7 +216,7 @@ function buildComponents() {
     .setPlaceholder('Frequency (days)')
     .addOptions(
       Array.from({ length: 7 }, (_, i) => i + 1).map((d) => ({
-        label: String(d),
+        label: `${d} day${d === 1 ? '' : 's'}`,
         value: String(d),
         default: config.days === d,
       }))
@@ -225,7 +227,7 @@ function buildComponents() {
     .setPlaceholder('Tips per send')
     .addOptions(
       Array.from({ length: 5 }, (_, i) => i + 1).map((c) => ({
-        label: String(c),
+        label: `${c} tip${c === 1 ? '' : 's'}`,
         value: String(c),
         default: config.count === c,
       }))
