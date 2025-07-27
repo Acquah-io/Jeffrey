@@ -119,8 +119,12 @@ async function fetchTips(count) {
 async function sendTip(client) {
   try {
     const tipCount = Math.max(1, config.count || 1);
-    const tips = await fetchTips(tipCount);
-    const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
+const tipCount = Math.max(1, config.count || 1);
+const chosen = [];
+for (let i = 0; i < tipCount; i++) {
+  chosen.push(tips[Math.floor(Math.random() * tips.length)]);
+}
+const msg = chosen.map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     for (const guild of client.guilds.cache.values()) {
       const studentRole = guild.roles.cache.find(r => r.name === 'Students');
