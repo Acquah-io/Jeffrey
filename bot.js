@@ -38,6 +38,8 @@ const handleGeneralQuestion = require('./features/generalQuestion');
 const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
+const pollManager = require('./pollManager');
+const { setupPollChannel, handleCreatePollButton, handleCreatePollModal, handleVoteButton } = pollManager;
 
 const clientDB = require('./database');
 
@@ -106,7 +108,8 @@ const STAFF_MESSAGE =
 "As a staff member, here’s what you can do with the Jeffrey Bot:\n\n" +
 "**1️⃣ /createevent** - Create new events.\n" +
 "**2️⃣ /manageusers** - Manage roles and permissions.\n" +
-"**3️⃣ /staffstats** - View staff-specific statistics.\n\n" +
+"**3️⃣ /staffstats** - View staff-specific statistics.\n" +
+"**4️⃣ Create polls** - Use the Create Poll button in #polls.\n\n" +
 "Update this list as needed! If you need assistance, contact the server admin.";
 
 const STUDENT_MESSAGE =
@@ -115,7 +118,8 @@ const STUDENT_MESSAGE =
 "## Queue actions\n" +
 "**1️⃣ /viewevents** – See upcoming events.\n" +
 "**2️⃣ /askquestion** – Ask staff or mentors a question.\n" +
-"**3️⃣ /resources** – Access helpful resources.\n\n" +
+"**3️⃣ /resources** – Access helpful resources.\n" +
+"**4️⃣ Vote in polls** – Check the #polls channel.\n\n" +
 "## Conversation‑history queries _(ask these in a DM to Jeffrey)_\n" +
 "• **Who asked about \\\"something\\\" in the chat?**\n" +
 "• **When was \\\"something\\\" last mentioned?**\n" +
@@ -163,6 +167,7 @@ async function refreshChannels(guild) {
     // Re-ensure that the student and staff channels are set up with updated permissions and documentation
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await ensurePollChannel(guild);
     await setupDocumentationChannels(guild);
 }
 
@@ -353,6 +358,7 @@ client.on('guildCreate', async (guild) => {
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
     await ensureQueueChannel(guild);
+    await ensurePollChannel(guild);
 });
 
 /**
@@ -537,6 +543,49 @@ async function ensureStaffQueueChannel(guild) {
             return staffQueueChannel;
     } catch (error) {
         console.error(`Failed to ensure "staff-queues" channel for ${guild.name}:`, error);
+    }
+}
+
+/**
+ * Ensures the 'polls' channel exists for creating and voting on polls.
+ */
+async function ensurePollChannel(guild) {
+    try {
+        let pollChannel = guild.channels.cache.find(
+            ch => ch.name === 'polls' && ch.type === ChannelType.GuildText
+        );
+        const staffRole = guild.roles.cache.find(r => r.name === 'Staff');
+        const studentRole = guild.roles.cache.find(r => r.name.toLowerCase() === 'students');
+
+        if (!pollChannel) {
+            console.log(`Creating "polls" channel in ${guild.name}...`);
+            pollChannel = await guild.channels.create({
+                name: 'polls',
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.id, deny: ['SendMessages'] },
+                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] },
+                    ...(staffRole ? [{ id: staffRole.id, allow: ['ViewChannel', 'SendMessages'] }] : []),
+                    ...(studentRole ? [{ id: studentRole.id, allow: ['ViewChannel'] }] : [])
+                ]
+            });
+            console.log(`Created "polls" channel in ${guild.name} (${pollChannel.id})`);
+        }
+
+        const botId = client.user.id;
+        if (!pollChannel.permissionOverwrites.cache.has(botId)) {
+            await pollChannel.permissionOverwrites.edit(botId, {
+                ViewChannel: true,
+                SendMessages: true,
+                ManageMessages: true,
+                ManageChannels: true
+            });
+        }
+
+        await setupPollChannel(pollChannel);
+        return pollChannel;
+    } catch (err) {
+        console.error(`Failed to ensure "polls" channel for ${guild.name}:`, err);
     }
 }
 
@@ -829,6 +878,10 @@ client.on('interactionCreate', async (interaction) => {
         return; // done with slash commands
     }
 
+    if (interaction.isModalSubmit() && interaction.customId === 'create-poll-modal') {
+        await handleCreatePollModal(interaction);
+        return;
+    }
     if (interaction.isModalSubmit() && interaction.customId === 'create-queue-modal') {
         await handleCreateQueueModal(interaction);
         return;
@@ -839,6 +892,15 @@ client.on('interactionCreate', async (interaction) => {
     }
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+
+    if (interaction.isButton() && interaction.customId === 'create-poll') {
+        await handleCreatePollButton(interaction);
+        return;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith('vote-')) {
+        await handleVoteButton(interaction);
+        return;
+    }
 
     // Let the generalQuestion collector handle these
     if (interaction.customId === 'yes_private_help' || interaction.customId === 'no_private_help') {
@@ -983,6 +1045,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
         // Re-create or ensure the student-queues channel and student-docs channel
         await ensureStudentQueueChannel(newPresence.guild);
         await updateDocumentationMessage(newPresence.guild, 'student-docs', STUDENT_MESSAGE);
+        await ensurePollChannel(newPresence.guild);
       }
     }
   } catch (err) {
