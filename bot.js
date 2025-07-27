@@ -164,6 +164,7 @@ async function refreshChannels(guild) {
     // Re-ensure that the student and staff channels are set up with updated permissions and documentation
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await studyTips.ensureSettingsChannel(guild);
     await setupDocumentationChannels(guild);
 }
 
@@ -356,6 +357,7 @@ client.on('guildCreate', async (guild) => {
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
     await ensureQueueChannel(guild);
+    await studyTips.ensureSettingsChannel(guild);
 });
 
 /**
