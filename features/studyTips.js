@@ -131,6 +131,7 @@ async function sendTip(client) {
     const numTips = Math.max(1, config.count || 1);
     const tips = await fetchTips(numTips);
     const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
+
     const tipCount = Math.max(1, config.count || 1);
 const tipCount = Math.max(1, config.count || 1);
 const chosen = [];

@@ -13,6 +13,8 @@ A Discord bot that uses OpenAI and Postgres.
    - `OPENAI_API_KEY`
 3. Start the bot with `npm start`.
 
+Node.js **18 or higher** is required to run Jeffrey.
+
 The bot reads the `OPENAI_API_KEY` environment variable for OpenAI access.
 
 ## Heroku deployment
