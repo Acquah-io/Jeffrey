@@ -902,25 +902,36 @@ client.on('interactionCreate', async (interaction) => {
             case 'blacklist-selector':
                 await handleBlacklistSelect(interaction);
                 break;
-// (Removed whitelist-selector case)
             case 'queue-blacklist':
                 await handleBlacklistButton(interaction);
                 break;
+            
             case 'edit-queue':
                 await handleEditQueue(interaction);
                 break;
+            
             case 'delete-user-selector':
                 await handleDeleteUserSelect(interaction);
                 break;
+            
             case 'queue-delete-user':
                 await handleDeleteUserButton(interaction);
                 break;
+            
             case 'create-queue':
                 await handleCreateQueueButton(interaction);
                 break;
+            
             case 'study-enable':
             case 'study-disable':
                 await studyTips.handleStudyTipButton(interaction);
+                break;
+            
+            case 'study-hour-select':
+            case 'study-minute-select':
+            case 'study-freq-select':
+            case 'study-count-select':
+                await studyTips.handleStudyTipSelect(interaction);
                 break;
 
           /* ---------- Fallback ---------- */
