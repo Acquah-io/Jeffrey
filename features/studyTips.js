@@ -503,24 +503,4 @@ module.exports = {
   handleStudyTipSelect,
   handleStudyTipModal,
   handleDaySelect,
-    if (sub === 'count') {
-      const c = interaction.options.getInteger('count');
-      if (c < 1) return interaction.reply({ content: '⛔ Count must be at least 1.', ephemeral: true });
-      config.count = c;
-      saveConfig();
-      scheduleNext(interaction.client);
-      return interaction.reply({ content: `Each reminder will contain ${c} tip(s).`, ephemeral: true });
-    }
-    if (sub === 'day') {
-      const d = interaction.options.getInteger('day');
-      if (d < 0 || d > 6) return interaction.reply({ content: '⛔ Day must be between 0 and 6.', ephemeral: true });
-      config.dayOfWeek = d;
-      saveConfig();
-      scheduleNext(interaction.client);
-      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      return interaction.reply({ content: `Study tips will send on ${dayNames[d]}.`, ephemeral: true });
-    }
-  },
-  setupStudyTips,
-  ensureSettingsChannel
 };

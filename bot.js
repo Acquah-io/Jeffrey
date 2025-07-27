@@ -846,6 +846,8 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('study-')) {
         await studyTips.handleStudyTipSelect(interaction);
+        return;
+    }
     if (interaction.isModalSubmit() && interaction.customId.startsWith('study-')) {
         await studyTips.handleStudyTipModal(interaction);
         return;
