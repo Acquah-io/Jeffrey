@@ -2,7 +2,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   EmbedBuilder,
   ChannelType,
 } = require('discord.js');
@@ -14,14 +13,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const CONFIG_PATH = path.join(__dirname, '..', 'studyTipConfig.json');
 const DEFAULT_CONFIG = {
   enabled: true,
-  hour: 9,
-  minute: 0,
-  days: 1,
-  count: 1,
-  dayOfWeek: null,
   settingsChannelId: null,
 };
 let config = { ...DEFAULT_CONFIG };
+const TIP_COUNT = 1;
 let timeout = null;
 
 function loadConfig() {
@@ -78,24 +73,32 @@ async function ensureSettingsChannel(guild) {
   }
 }
 
+function lastSundayOfMonth(year, month) {
+  const d = new Date(Date.UTC(year, month + 1, 0));
+  const day = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - day);
+  d.setUTCHours(1, 0, 0, 0); // 1:00 UTC
+  return d;
+}
+
+function isUkDst(date) {
+  const year = date.getUTCFullYear();
+  const start = lastSundayOfMonth(year, 2); // March
+  const end = lastSundayOfMonth(year, 9);   // October
+  return date >= start && date < end;
+}
+
+function londonNoonUtc(year, month, day) {
+  const dt = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  if (isUkDst(dt)) dt.setUTCMinutes(dt.getUTCMinutes() - 60);
+  return dt;
+}
+
 function nextTriggerDate() {
   const now = new Date();
-  let next = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    config.hour,
-    config.minute,
-    0
-  ));
-  if (typeof config.dayOfWeek === 'number') {
-    while (next.getUTCDay() !== config.dayOfWeek || next <= now) {
-      next.setUTCDate(next.getUTCDate() + 1);
-    }
-  } else {
-    while (next <= now) {
-      next.setUTCDate(next.getUTCDate() + config.days);
-    }
+  let next = londonNoonUtc(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  while (next <= now || next.getUTCDay() !== 0) {
+    next = londonNoonUtc(next.getUTCFullYear(), next.getUTCMonth(), next.getUTCDate() + 1);
   }
   return next;
 }
@@ -125,8 +128,7 @@ async function fetchTips(count) {
 
 async function sendTip(client) {
   try {
-    const numTips = Math.max(1, config.count || 1);
-    const tips = await fetchTips(numTips);
+    const tips = await fetchTips(TIP_COUNT);
     const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     for (const guild of client.guilds.cache.values()) {
@@ -141,7 +143,7 @@ async function sendTip(client) {
       const students = members.filter(m => m.roles.cache.has(studentRole.id) && !m.user.bot);
       for (const member of students.values()) {
         try {
-          await member.send(`\uD83D\uDCDA **Study Tip${numTips > 1 ? 's' : ''}:**\n${msg}`);
+          await member.send(`\uD83D\uDCDA **Study Tip:**\n${msg}`);
         } catch (err) {
           console.error('Failed to DM study tip to', member.user.tag, err);
         }
@@ -167,12 +169,9 @@ function buildEmbed() {
   const next = nextTriggerDate();
   const desc = [
     `**Status:** ${config.enabled ? 'Enabled' : 'Disabled'}`,
-    `**Time (UTC):** ${String(config.hour).padStart(2, '0')}:${String(config.minute).padStart(2, '0')}`,
-    `**Every:** ${config.days} day(s)`,
-    `**Tips per send:** ${config.count}`,
-    `**Next send:** ${next.toUTCString()}`,
+    `**Next send (UTC):** ${next.toUTCString()}`,
     '',
-    'Use the dropdowns below to adjust the hour, minute, frequency and tip count.'
+    'Tips are sent every Sunday at 12:00 UK time.'
   ].join('\n');
   return new EmbedBuilder()
     .setTitle('Study Tip Settings')
@@ -181,63 +180,19 @@ function buildEmbed() {
 }
 
 function buildComponents() {
-  const row1 = new ActionRowBuilder().addComponents(
+  const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(config.enabled ? 'study-disable' : 'study-enable')
-      .setLabel(config.enabled ? 'Disable' : 'Enable')
-      .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setCustomId('study-enable')
+      .setLabel('Enable')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(config.enabled),
+    new ButtonBuilder()
+      .setCustomId('study-disable')
+      .setLabel('Disable')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!config.enabled)
   );
-
-
-  const hourMenu = new StringSelectMenuBuilder()
-    .setCustomId('study-hour-select')
-    .setPlaceholder('Hour (UTC)')
-    .addOptions(
-      Array.from({ length: 24 }, (_, i) => ({
-        label: `${String(i).padStart(2, '0')} h`,
-        value: String(i),
-        default: config.hour === i,
-      }))
-    );
-
-  const minuteMenu = new StringSelectMenuBuilder()
-    .setCustomId('study-minute-select')
-    .setPlaceholder('Minute')
-    .addOptions(
-      Array.from({ length: 12 }, (_, i) => i * 5).map((m) => ({
-        label: `${String(m).padStart(2, '0')} min`,
-        value: String(m),
-        default: config.minute === m,
-      }))
-    );
-
-  const freqMenu = new StringSelectMenuBuilder()
-    .setCustomId('study-freq-select')
-    .setPlaceholder('Frequency (days)')
-    .addOptions(
-      Array.from({ length: 7 }, (_, i) => i + 1).map((d) => ({
-        label: `${d} day${d === 1 ? '' : 's'}`,
-        value: String(d),
-        default: config.days === d,
-      }))
-    );
-
-  const countMenu = new StringSelectMenuBuilder()
-    .setCustomId('study-count-select')
-    .setPlaceholder('Tips per send')
-    .addOptions(
-      Array.from({ length: 5 }, (_, i) => i + 1).map((c) => ({
-        label: `${c} tip${c === 1 ? '' : 's'}`,
-        value: String(c),
-        default: config.count === c,
-      }))
-    );
-
-  const row2 = new ActionRowBuilder().addComponents(hourMenu);
-  const row3 = new ActionRowBuilder().addComponents(minuteMenu);
-  const row4 = new ActionRowBuilder().addComponents(freqMenu);
-  const row5 = new ActionRowBuilder().addComponents(countMenu);
-  return [row1, row2, row3, row4, row5];
+  return [row];
 }
 
 async function postPanel(channel) {
@@ -288,41 +243,9 @@ async function handleStudyTipButton(interaction) {
   await refreshPanel(interaction.guild);
 }
 
-async function handleStudyTipSelect(interaction) {
-  if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
-    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
-  }
-  const val = interaction.values[0];
-  let msg;
-  switch (interaction.customId) {
-    case 'study-hour-select':
-      config.hour = parseInt(val, 10);
-      msg = `Hour set to ${String(config.hour).padStart(2, '0')} UTC.`;
-      break;
-    case 'study-minute-select':
-      config.minute = parseInt(val, 10);
-      msg = `Minute set to ${String(config.minute).padStart(2, '0')}.`;
-      break;
-    case 'study-freq-select':
-      config.days = parseInt(val, 10);
-      msg = `Frequency set to every ${config.days} day(s).`;
-      break;
-    case 'study-count-select':
-      config.count = parseInt(val, 10);
-      msg = `Each reminder will contain ${config.count} tip(s).`;
-      break;
-    default:
-      return;
-  }
-  saveConfig();
-  scheduleNext(interaction.client);
-  await interaction.reply({ content: msg, ephemeral: true });
-  await refreshPanel(interaction.guild);
-}
 
 module.exports = {
   setupStudyTips,
   ensureSettingsChannel,
   handleStudyTipButton,
-  handleStudyTipSelect,
 };

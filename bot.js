@@ -844,12 +844,7 @@ client.on('interactionCreate', async (interaction) => {
         await handleEditQueueModal(interaction);
         return;
     }
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('study-')) {
-        await studyTips.handleStudyTipSelect(interaction);
-        return;
-    }
-    
-    if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    if (!interaction.isButton()) return;
 
     // Let the generalQuestion collector handle these
     if (interaction.customId === 'yes_private_help' || interaction.customId === 'no_private_help') {
@@ -927,12 +922,6 @@ client.on('interactionCreate', async (interaction) => {
                 await studyTips.handleStudyTipButton(interaction);
                 break;
             
-            case 'study-hour-select':
-            case 'study-minute-select':
-            case 'study-freq-select':
-            case 'study-count-select':
-                await studyTips.handleStudyTipSelect(interaction);
-                break;
 
           /* ---------- Fallback ---------- */
           default:
