@@ -131,6 +131,13 @@ async function sendTip(client) {
     const numTips = Math.max(1, config.count || 1);
     const tips = await fetchTips(numTips);
     const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
+    const tipCount = Math.max(1, config.count || 1);
+const tipCount = Math.max(1, config.count || 1);
+const chosen = [];
+for (let i = 0; i < tipCount; i++) {
+  chosen.push(tips[Math.floor(Math.random() * tips.length)]);
+}
+const msg = chosen.map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     for (const guild of client.guilds.cache.values()) {
       const studentRole = guild.roles.cache.find(r => r.name === 'Students');
@@ -145,6 +152,7 @@ async function sendTip(client) {
       for (const member of students.values()) {
         try {
           await member.send(`\uD83D\uDCDA **Study Tip${numTips > 1 ? 's' : ''}:**\n${msg}`);
+          await member.send(`\uD83D\uDCDA **Study Tip${tipCount > 1 ? 's' : ''}:**\n${msg}`);
         } catch (err) {
           console.error('Failed to DM study tip to', member.user.tag, err);
         }
@@ -243,6 +251,7 @@ function setupStudyTips(client) {
   loadConfig();
   for (const [, guild] of client.guilds.cache) {
     refreshPanel(guild);
+    ensureSettingsChannel(guild);
   }
   scheduleNext(client);
 }
@@ -253,6 +262,35 @@ async function handleStudyTipButton(interaction) {
   }
   switch (interaction.customId) {
     case 'study-enable':
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('studytip')
+    .setDescription('Manage scheduled study tips')
+    .addSubcommand(sc => sc.setName('enable').setDescription('Enable tips'))
+    .addSubcommand(sc => sc.setName('disable').setDescription('Disable tips'))
+    .addSubcommand(sc => sc.setName('settime')
+      .setDescription('Set time of day in UTC')
+      .addIntegerOption(o => o.setName('hour').setDescription('0-23').setRequired(true))
+      .addIntegerOption(o => o.setName('minute').setDescription('0-59').setRequired(true)))
+    .addSubcommand(sc => sc.setName('frequency')
+      .setDescription('Set days between tips')
+      .addIntegerOption(o => o.setName('days').setDescription('Number of days').setRequired(true)))
+    .addSubcommand(sc => sc.setName('count')
+      .setDescription('Number of tips per send')
+      .addIntegerOption(o => o.setName('count').setDescription('1 or more').setRequired(true)))
+    .addSubcommand(sc => sc.setName('day')
+      .setDescription('Day of week (0=Sun)')
+      .addIntegerOption(o => o.setName('day').setDescription('0-6').setRequired(true))),
+  async execute(interaction) {
+    const staffRole = interaction.guild.roles.cache.find(r => r.name === 'Staff');
+    if (!staffRole || !interaction.member.roles.cache.has(staffRole.id)) {
+      return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+    }
+    if (config.settingsChannelId && interaction.channelId !== config.settingsChannelId) {
+      return interaction.reply({ content: '⛔ Use the study-tip-settings channel for this command.', ephemeral: true });
+    }
+    const sub = interaction.options.getSubcommand();
+    if (sub === 'enable') {
       config.enabled = true;
       saveConfig();
       scheduleNext(interaction.client);
@@ -377,4 +415,25 @@ module.exports = {
   handleStudyTipButton,
   handleStudyTipModal,
   handleDaySelect,
+=======
+    if (sub === 'count') {
+      const c = interaction.options.getInteger('count');
+      if (c < 1) return interaction.reply({ content: '⛔ Count must be at least 1.', ephemeral: true });
+      config.count = c;
+      saveConfig();
+      scheduleNext(interaction.client);
+      return interaction.reply({ content: `Each reminder will contain ${c} tip(s).`, ephemeral: true });
+    }
+    if (sub === 'day') {
+      const d = interaction.options.getInteger('day');
+      if (d < 0 || d > 6) return interaction.reply({ content: '⛔ Day must be between 0 and 6.', ephemeral: true });
+      config.dayOfWeek = d;
+      saveConfig();
+      scheduleNext(interaction.client);
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      return interaction.reply({ content: `Study tips will send on ${dayNames[d]}.`, ephemeral: true });
+    }
+  },
+  setupStudyTips,
+  ensureSettingsChannel
 };
