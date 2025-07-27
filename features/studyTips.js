@@ -165,13 +165,10 @@ function scheduleNext(client) {
 
 function buildEmbed() {
   const next = nextTriggerDate();
-  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const desc = [
     `**Status:** ${config.enabled ? 'Enabled' : 'Disabled'}`,
     `**Time (UTC):** ${String(config.hour).padStart(2, '0')}:${String(config.minute).padStart(2, '0')}`,
-    typeof config.dayOfWeek === 'number'
-      ? `**Day:** ${dayNames[config.dayOfWeek]}`
-      : `**Every:** ${config.days} day(s)`,
+    `**Every:** ${config.days} day(s)`,
     `**Tips per send:** ${config.count}`,
     `**Next send:** ${next.toUTCString()}`
   ].join('\n');
@@ -189,19 +186,6 @@ function buildComponents() {
       .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
   );
 
-  const dayMenu = new StringSelectMenuBuilder()
-    .setCustomId('study-day-select')
-    .setPlaceholder('Select day of week (or None)')
-    .addOptions(
-      { label: 'None', value: 'none', default: config.dayOfWeek === null },
-      { label: 'Sunday', value: '0', default: config.dayOfWeek === 0 },
-      { label: 'Monday', value: '1', default: config.dayOfWeek === 1 },
-      { label: 'Tuesday', value: '2', default: config.dayOfWeek === 2 },
-      { label: 'Wednesday', value: '3', default: config.dayOfWeek === 3 },
-      { label: 'Thursday', value: '4', default: config.dayOfWeek === 4 },
-      { label: 'Friday', value: '5', default: config.dayOfWeek === 5 },
-      { label: 'Saturday', value: '6', default: config.dayOfWeek === 6 }
-    );
 
   const hourMenu = new StringSelectMenuBuilder()
     .setCustomId('study-hour-select')
@@ -247,8 +231,8 @@ function buildComponents() {
       }))
     );
 
-  const row2 = new ActionRowBuilder().addComponents(dayMenu);
-  const row3 = new ActionRowBuilder().addComponents(hourMenu, minuteMenu);
+  const row2 = new ActionRowBuilder().addComponents(hourMenu);
+  const row3 = new ActionRowBuilder().addComponents(minuteMenu);
   const row4 = new ActionRowBuilder().addComponents(freqMenu);
   const row5 = new ActionRowBuilder().addComponents(countMenu);
   return [row1, row2, row3, row4, row5];
@@ -307,15 +291,8 @@ async function handleStudyTipSelect(interaction) {
     return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
   }
   const val = interaction.values[0];
-  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let msg;
   switch (interaction.customId) {
-    case 'study-day-select':
-      config.dayOfWeek = val === 'none' ? null : parseInt(val, 10);
-      msg = val === 'none'
-        ? 'Tips will send based on frequency.'
-        : `Study tips will send on ${dayNames[config.dayOfWeek]}.`;
-      break;
     case 'study-hour-select':
       config.hour = parseInt(val, 10);
       msg = `Hour set to ${String(config.hour).padStart(2, '0')} UTC.`;
