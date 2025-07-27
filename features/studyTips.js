@@ -1,4 +1,14 @@
-const { SlashCommandBuilder, ChannelType } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  EmbedBuilder,
+  ChannelType,
+} = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
@@ -118,6 +128,9 @@ async function fetchTips(count) {
 
 async function sendTip(client) {
   try {
+    const numTips = Math.max(1, config.count || 1);
+    const tips = await fetchTips(numTips);
+    const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
     const tipCount = Math.max(1, config.count || 1);
 const tipCount = Math.max(1, config.count || 1);
 const chosen = [];
@@ -138,6 +151,7 @@ const msg = chosen.map((t, i) => `${i + 1}. ${t}`).join('\n');
       const students = members.filter(m => m.roles.cache.has(studentRole.id) && !m.user.bot);
       for (const member of students.values()) {
         try {
+          await member.send(`\uD83D\uDCDA **Study Tip${numTips > 1 ? 's' : ''}:**\n${msg}`);
           await member.send(`\uD83D\uDCDA **Study Tip${tipCount > 1 ? 's' : ''}:**\n${msg}`);
         } catch (err) {
           console.error('Failed to DM study tip to', member.user.tag, err);
@@ -160,14 +174,94 @@ function scheduleNext(client) {
   }, delay);
 }
 
+function buildEmbed() {
+  const next = nextTriggerDate();
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const desc = [
+    `**Status:** ${config.enabled ? 'Enabled' : 'Disabled'}`,
+    `**Time (UTC):** ${String(config.hour).padStart(2, '0')}:${String(config.minute).padStart(2, '0')}`,
+    typeof config.dayOfWeek === 'number'
+      ? `**Day:** ${dayNames[config.dayOfWeek]}`
+      : `**Every:** ${config.days} day(s)`,
+    `**Tips per send:** ${config.count}`,
+    `**Next send:** ${next.toUTCString()}`
+  ].join('\n');
+  return new EmbedBuilder()
+    .setTitle('Study Tip Settings')
+    .setColor('#00b0ff')
+    .setDescription(desc);
+}
+
+function buildComponents() {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(config.enabled ? 'study-disable' : 'study-enable')
+      .setLabel(config.enabled ? 'Disable' : 'Enable')
+      .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('study-settime')
+      .setLabel('Set Time')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('study-setfreq')
+      .setLabel('Set Frequency')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('study-setcount')
+      .setLabel('Set Count')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const dayMenu = new StringSelectMenuBuilder()
+    .setCustomId('study-day-select')
+    .setPlaceholder('Select day of week (or None)')
+    .addOptions(
+      { label: 'None', value: 'none', default: config.dayOfWeek === null },
+      { label: 'Sunday', value: '0', default: config.dayOfWeek === 0 },
+      { label: 'Monday', value: '1', default: config.dayOfWeek === 1 },
+      { label: 'Tuesday', value: '2', default: config.dayOfWeek === 2 },
+      { label: 'Wednesday', value: '3', default: config.dayOfWeek === 3 },
+      { label: 'Thursday', value: '4', default: config.dayOfWeek === 4 },
+      { label: 'Friday', value: '5', default: config.dayOfWeek === 5 },
+      { label: 'Saturday', value: '6', default: config.dayOfWeek === 6 }
+    );
+
+  const row2 = new ActionRowBuilder().addComponents(dayMenu);
+  return [row1, row2];
+}
+
+async function postPanel(channel) {
+  const embed = buildEmbed();
+  const components = buildComponents();
+  const pinned = await channel.messages.fetchPinned();
+  let msg = pinned.find(m => m.embeds[0]?.title === 'Study Tip Settings');
+  if (msg) {
+    await msg.edit({ embeds: [embed], components });
+  } else {
+    msg = await (await channel.send({ embeds: [embed], components })).pin();
+  }
+}
+
+async function refreshPanel(guild) {
+  const ch = await ensureSettingsChannel(guild);
+  if (ch) await postPanel(ch);
+}
+
 function setupStudyTips(client) {
   loadConfig();
   for (const [, guild] of client.guilds.cache) {
+    refreshPanel(guild);
     ensureSettingsChannel(guild);
   }
   scheduleNext(client);
 }
 
+async function handleStudyTipButton(interaction) {
+  if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
+    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+  }
+  switch (interaction.customId) {
+    case 'study-enable':
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('studytip')
@@ -200,34 +294,128 @@ module.exports = {
       config.enabled = true;
       saveConfig();
       scheduleNext(interaction.client);
-      return interaction.reply({ content: 'Study tips enabled.', ephemeral: true });
-    }
-    if (sub === 'disable') {
+      await interaction.reply({ content: 'Study tips enabled.', ephemeral: true });
+      break;
+    case 'study-disable':
       config.enabled = false;
       saveConfig();
       if (timeout) clearTimeout(timeout);
-      return interaction.reply({ content: 'Study tips disabled.', ephemeral: true });
+      await interaction.reply({ content: 'Study tips disabled.', ephemeral: true });
+      break;
+    case 'study-settime': {
+      const modal = new ModalBuilder()
+        .setCustomId('study-time-modal')
+        .setTitle('Set Tip Time (UTC)');
+      const hour = new TextInputBuilder()
+        .setCustomId('hour')
+        .setLabel('Hour (0-23)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(String(config.hour));
+      const minute = new TextInputBuilder()
+        .setCustomId('minute')
+        .setLabel('Minute (0-59)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(String(config.minute));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(hour),
+        new ActionRowBuilder().addComponents(minute)
+      );
+      return interaction.showModal(modal);
     }
-    if (sub === 'settime') {
-      const h = interaction.options.getInteger('hour');
-      const m = interaction.options.getInteger('minute');
-      if (h < 0 || h > 23 || m < 0 || m > 59) {
-        return interaction.reply({ content: '⛔ Invalid time.', ephemeral: true });
-      }
-      config.hour = h;
-      config.minute = m;
-      saveConfig();
-      scheduleNext(interaction.client);
-      return interaction.reply({ content: `Time set to ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} UTC`, ephemeral: true });
+    case 'study-setfreq': {
+      const modal = new ModalBuilder()
+        .setCustomId('study-frequency-modal')
+        .setTitle('Set Frequency (days)');
+      const days = new TextInputBuilder()
+        .setCustomId('days')
+        .setLabel('Days between tips')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(String(config.days));
+      modal.addComponents(new ActionRowBuilder().addComponents(days));
+      return interaction.showModal(modal);
     }
-    if (sub === 'frequency') {
-      const d = interaction.options.getInteger('days');
-      if (d < 1) return interaction.reply({ content: '⛔ Days must be at least 1.', ephemeral: true });
-      config.days = d;
-      saveConfig();
-      scheduleNext(interaction.client);
-      return interaction.reply({ content: `Frequency set to every ${d} day(s).`, ephemeral: true });
+    case 'study-setcount': {
+      const modal = new ModalBuilder()
+        .setCustomId('study-count-modal')
+        .setTitle('Set Tips per Send');
+      const count = new TextInputBuilder()
+        .setCustomId('count')
+        .setLabel('Number of tips')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(String(config.count));
+      modal.addComponents(new ActionRowBuilder().addComponents(count));
+      return interaction.showModal(modal);
     }
+    default:
+      return;
+  }
+  await refreshPanel(interaction.guild);
+}
+
+async function handleStudyTipModal(interaction) {
+  if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
+    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+  }
+  if (interaction.customId === 'study-time-modal') {
+    const h = parseInt(interaction.fields.getTextInputValue('hour'), 10);
+    const m = parseInt(interaction.fields.getTextInputValue('minute'), 10);
+    if (isNaN(h) || h < 0 || h > 23 || isNaN(m) || m < 0 || m > 59) {
+      return interaction.reply({ content: '⛔ Invalid time values.', ephemeral: true });
+    }
+    config.hour = h;
+    config.minute = m;
+    saveConfig();
+    scheduleNext(interaction.client);
+    await interaction.reply({ content: `Time set to ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} UTC`, ephemeral: true });
+  } else if (interaction.customId === 'study-frequency-modal') {
+    const d = parseInt(interaction.fields.getTextInputValue('days'), 10);
+    if (isNaN(d) || d < 1) {
+      return interaction.reply({ content: '⛔ Days must be at least 1.', ephemeral: true });
+    }
+    config.days = d;
+    saveConfig();
+    scheduleNext(interaction.client);
+    await interaction.reply({ content: `Frequency set to every ${d} day(s).`, ephemeral: true });
+  } else if (interaction.customId === 'study-count-modal') {
+    const c = parseInt(interaction.fields.getTextInputValue('count'), 10);
+    if (isNaN(c) || c < 1) {
+      return interaction.reply({ content: '⛔ Count must be at least 1.', ephemeral: true });
+    }
+    config.count = c;
+    saveConfig();
+    scheduleNext(interaction.client);
+    await interaction.reply({ content: `Each reminder will contain ${c} tip(s).`, ephemeral: true });
+  } else {
+    return;
+  }
+  await refreshPanel(interaction.guild);
+}
+
+async function handleDaySelect(interaction) {
+  if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
+    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+  }
+  const val = interaction.values[0];
+  config.dayOfWeek = val === 'none' ? null : parseInt(val, 10);
+  saveConfig();
+  scheduleNext(interaction.client);
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const text = val === 'none' ? 'Tips will send based on frequency.' : `Study tips will send on ${dayNames[config.dayOfWeek]}.`;
+  await interaction.reply({ content: text, ephemeral: true });
+  await refreshPanel(interaction.guild);
+}
+
+module.exports = {
+  setupStudyTips,
+  ensureSettingsChannel,
+  handleStudyTipButton,
+  handleStudyTipModal,
+  handleDaySelect,
+=======
     if (sub === 'count') {
       const c = interaction.options.getInteger('count');
       if (c < 1) return interaction.reply({ content: '⛔ Count must be at least 1.', ephemeral: true });
