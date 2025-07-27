@@ -39,6 +39,8 @@ const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
 
+const { markDone, startWatcher } = require('./reminderManager');
+
 const clientDB = require('./database');
 
 /**
@@ -343,6 +345,9 @@ client.once('ready', async () => {
         await backfillGuildHistory(guild);
         console.log(`Backfill complete for ${guild.name}.`);
     }
+
+    // Start the reminder DM watcher once the bot is ready
+    startWatcher(client);
 });
 
 /**
@@ -908,10 +913,19 @@ client.on('interactionCreate', async (interaction) => {
                 await handleCreateQueueButton(interaction);
                 break;
 
-          /* ---------- Fallback ---------- */
-          default:
-              await interaction.reply({ content: '⛔ Unknown interaction.', ephemeral: true });
-              break;
+
+            // ---------- Reminders ----------
+            default:
+                if (customId.startsWith('reminder-done-')) {
+                    const id = customId.slice('reminder-done-'.length);
+                    await markDone(id);
+                    await interaction.reply({ content: '✅ Reminder marked as done.', ephemeral: true });
+                    break;
+                }
+
+                /* ---------- Fallback ---------- */
+                await interaction.reply({ content: '⛔ Unknown interaction.', ephemeral: true });
+                break;
           }
     } catch (error) {
         console.error('Error handling interaction:', error);
@@ -945,6 +959,26 @@ client.on('messageCreate', async (message) => {
     await handleCodeReview(message);
     await handleDMResponse(message);
     await handleGeneralQuestion(message);
+
+    // ---------- Reminder text command ----------
+    if (message.channel.name === 'reminders' && /^remind me /i.test(message.content)) {
+      const chrono = require('chrono-node');
+      const text = message.content.slice(9).trim();
+      const res = chrono.parse(text)[0];
+      if (!res) {
+        await message.reply('❗ I couldn\'t understand the time.');
+      } else {
+        const remindAt = res.start.date();
+        const reminderText = (text.slice(0, res.index) + text.slice(res.index + res.text.length)).trim();
+        if (!reminderText) {
+          await message.reply('❗ Please provide a reminder message.');
+        } else {
+          const { addReminder } = require('./reminderManager');
+          await addReminder(message.author.id, message.guildId, reminderText, remindAt);
+          await message.reply(`✅ Reminder set for <t:${Math.floor(remindAt.getTime()/1000)}:f>. I\'ll DM you then.`);
+        }
+      }
+    }
 
     /* ---------- Live message logging ---------- */
     try {
