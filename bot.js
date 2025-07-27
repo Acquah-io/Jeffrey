@@ -846,6 +846,13 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('study-')) {
         await studyTips.handleStudyTipSelect(interaction);
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('study-')) {
+        await studyTips.handleStudyTipModal(interaction);
+        return;
+    }
+
+    if (interaction.isStringSelectMenu() && interaction.customId === 'study-day-select') {
+        await studyTips.handleDaySelect(interaction);
         return;
     }
     
@@ -920,6 +927,9 @@ client.on('interactionCreate', async (interaction) => {
                 break;
             case 'study-enable':
             case 'study-disable':
+            case 'study-settime':
+            case 'study-setfreq':
+            case 'study-setcount':
                 await studyTips.handleStudyTipButton(interaction);
                 break;
 
