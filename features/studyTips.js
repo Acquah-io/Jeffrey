@@ -182,9 +182,15 @@ function buildEmbed() {
 function buildComponents() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(config.enabled ? 'study-disable' : 'study-enable')
-      .setLabel(config.enabled ? 'Disable' : 'Enable')
-      .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setCustomId('study-enable')
+      .setLabel('Enable')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(config.enabled),
+    new ButtonBuilder()
+      .setCustomId('study-disable')
+      .setLabel('Disable')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!config.enabled)
   );
   return [row];
 }
