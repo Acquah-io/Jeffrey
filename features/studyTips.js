@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const CONFIG_PATH = path.join(__dirname, '..', 'studyTipConfig.json');
 const DEFAULT_CONFIG = {
@@ -91,22 +93,34 @@ function nextTriggerDate() {
   return next;
 }
 
-const tips = [
-  'Review new material within 24 hours to boost retention.',
-  'Explain concepts aloud as if teaching someone else.',
-  'Take short breaks every hour to stay focused.',
-  'Practice recalling information without looking at your notes.',
-  'Organise your study space to minimise distractions.'
-];
+async function fetchTips(count) {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.7,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an educational assistant who provides concise study tips.',
+      },
+      {
+        role: 'user',
+        content: `Give ${count} unique study tips. Number each tip.`,
+      },
+    ],
+  });
+  const lines = completion.choices[0].message.content
+    .split('\n')
+    .map((l) => l.replace(/^\d+[\).\-]\s*/, '').trim())
+    .filter(Boolean);
+  return lines.slice(0, count);
+}
 
 async function sendTip(client) {
   try {
     const tipCount = Math.max(1, config.count || 1);
-    const chosen = [];
-    for (let i = 0; i < tipCount; i++) {
-      chosen.push(tips[Math.floor(Math.random() * tips.length)]);
-    }
-    const msg = chosen.map((t, i) => `${i + 1}. ${t}`).join('\n');
+    const tips = await fetchTips(tipCount);
+    const msg = tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     for (const guild of client.guilds.cache.values()) {
       const studentRole = guild.roles.cache.find(r => r.name === 'Students');
