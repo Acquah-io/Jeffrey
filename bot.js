@@ -164,6 +164,8 @@ async function refreshChannels(guild) {
     // Re-ensure that the student and staff channels are set up with updated permissions and documentation
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await studyTips.ensureSettingsChannel(guild);
+    studyTips.setupStudyTips(client);
     await setupDocumentationChannels(guild);
 }
 
@@ -356,6 +358,8 @@ client.on('guildCreate', async (guild) => {
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
     await ensureQueueChannel(guild);
+    await studyTips.ensureSettingsChannel(guild);
+    studyTips.setupStudyTips(client);
 });
 
 /**
@@ -840,6 +844,10 @@ client.on('interactionCreate', async (interaction) => {
         await handleEditQueueModal(interaction);
         return;
     }
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('study-')) {
+        await studyTips.handleStudyTipSelect(interaction);
+        return;
+    }
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
 
@@ -909,6 +917,10 @@ client.on('interactionCreate', async (interaction) => {
                 break;
             case 'create-queue':
                 await handleCreateQueueButton(interaction);
+                break;
+            case 'study-enable':
+            case 'study-disable':
+                await studyTips.handleStudyTipButton(interaction);
                 break;
 
           /* ---------- Fallback ---------- */
