@@ -1,9 +1,9 @@
-const { SlashCommandBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'studyTipConfig.json');
-const DEFAULT_CONFIG = { enabled: true, hour: 9, minute: 0, days: 1, channelId: null };
+const DEFAULT_CONFIG = { enabled: true, hour: 9, minute: 0, days: 1 };
 let config = { ...DEFAULT_CONFIG };
 let timeout = null;
 
@@ -38,21 +38,27 @@ const tips = [
 ];
 
 async function sendTip(client) {
-  try {
-    let channel;
-    if (config.channelId) {
-      channel = await client.channels.fetch(config.channelId).catch(() => null);
-    } else {
-      channel = client.channels.cache.find(c => c.name === 'general' && c.isTextBased());
+  const tip = tips[Math.floor(Math.random() * tips.length)];
+  const msg = `\uD83D\uDCDA **Study Tip:** ${tip}`;
+  for (const guild of client.guilds.cache.values()) {
+    const studentRole = guild.roles.cache.find(r => r.name === 'Students');
+    if (!studentRole) continue;
+    let members;
+    try {
+      members = await guild.members.fetch();
+    } catch (err) {
+      console.warn('Failed to fetch members for', guild.name, err);
+      continue;
     }
-    if (!channel) {
-      console.warn('Study tip channel not found.');
-      return;
+    for (const member of members.values()) {
+      if (member.user.bot) continue;
+      if (!member.roles.cache.has(studentRole.id)) continue;
+      try {
+        await member.send(msg);
+      } catch (err) {
+        console.warn(`Failed to DM ${member.user.tag}:`, err.message);
+      }
     }
-    const tip = tips[Math.floor(Math.random() * tips.length)];
-    await channel.send(`\uD83D\uDCDA **Study Tip:** ${tip}`);
-  } catch (err) {
-    console.error('Failed to send study tip:', err);
   }
 }
 
@@ -84,11 +90,7 @@ module.exports = {
       .addIntegerOption(o => o.setName('minute').setDescription('0-59').setRequired(true)))
     .addSubcommand(sc => sc.setName('frequency')
       .setDescription('Set days between tips')
-      .addIntegerOption(o => o.setName('days').setDescription('Number of days').setRequired(true)))
-    .addSubcommand(sc => sc.setName('channel')
-      .setDescription('Set target channel')
-      .addChannelOption(o =>
-        o.setName('channel').setDescription('Text channel').setRequired(true).addChannelTypes(ChannelType.GuildText))),
+      .addIntegerOption(o => o.setName('days').setDescription('Number of days').setRequired(true))),
   async execute(interaction) {
     const staffRole = interaction.guild.roles.cache.find(r => r.name === 'Staff');
     if (!staffRole || !interaction.member.roles.cache.has(staffRole.id)) {
@@ -127,16 +129,7 @@ module.exports = {
       scheduleNext(interaction.client);
       return interaction.reply({ content: `Frequency set to every ${d} day(s).`, ephemeral: true });
     }
-    if (sub === 'channel') {
-      const channel = interaction.options.getChannel('channel');
-      if (channel.type !== ChannelType.GuildText) {
-        return interaction.reply({ content: '⛔ Please choose a text channel.', ephemeral: true });
-      }
-      config.channelId = channel.id;
-      saveConfig();
-      scheduleNext(interaction.client);
-      return interaction.reply({ content: `Study tips will post in ${channel}.`, ephemeral: true });
-    }
+    // 'channel' subcommand removed – tips are now sent via DM
   },
   setupStudyTips
 };

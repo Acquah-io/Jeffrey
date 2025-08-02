@@ -2,6 +2,5 @@
   "enabled": true,
   "hour": 9,
   "minute": 0,
-  "days": 1,
-  "channelId": null
+  "days": 1
 }
