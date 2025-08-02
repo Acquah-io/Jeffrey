@@ -221,26 +221,47 @@ function setupStudyTips(client) {
 }
 
 async function handleStudyTipButton(interaction) {
+  // Authorise first; reply immediately if not Staff
   if (!interaction.member.roles.cache.some(r => r.name === 'Staff')) {
-    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+    try { await interaction.followUp({ content: '⛔ Staff only.', flags: 64 }); } catch (_) {}
+    return;
   }
-  switch (interaction.customId) {
-    case 'study-enable':
-      config.enabled = true;
-      saveConfig();
-      scheduleNext(interaction.client);
-      await interaction.reply({ content: 'Study tips enabled.', ephemeral: true });
-      break;
-    case 'study-disable':
-      config.enabled = false;
-      saveConfig();
-      if (timeout) clearTimeout(timeout);
-      await interaction.reply({ content: 'Study tips disabled.', ephemeral: true });
-      break;
-    default:
-      return;
+
+  let notice;
+  try {
+    switch (interaction.customId) {
+      case 'study-enable':
+        config.enabled = true;
+        saveConfig();
+        scheduleNext(interaction.client);
+        notice = 'Study tips enabled.';
+        break;
+
+      case 'study-disable':
+        config.enabled = false;
+        saveConfig();
+        if (timeout) clearTimeout(timeout);
+        notice = 'Study tips disabled.';
+        break;
+
+      default: {
+        // Silently acknowledge unknown components to avoid confusing users
+        if (!interaction.deferred && !interaction.replied) {
+            try { await interaction.deferUpdate(); } catch (_) {}
+        }
+        if (typeof interaction.customId === 'string') {
+            console.debug('Unhandled component customId:', interaction.customId);
+        }
+        break;
+      }
+    }
+
+    await refreshPanel(interaction.guild);
+    try { await interaction.followUp({ content: notice, flags: 64 }); } catch (_) {}
+  } catch (err) {
+    console.error('Study tip button failed:', err);
+    try { await interaction.followUp({ content: 'Something went wrong while updating the study tips.', flags: 64 }); } catch (_) {}
   }
-  await refreshPanel(interaction.guild);
 }
 
 

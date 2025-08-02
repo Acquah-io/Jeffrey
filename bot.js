@@ -924,23 +924,34 @@ client.on('interactionCreate', async (interaction) => {
             
 
           /* ---------- Fallback ---------- */
-          default:
-              await interaction.reply({ content: '⛔ Unknown interaction.', ephemeral: true });
-              break;
-          }
-    } catch (error) {
-        console.error('Error handling interaction:', error);
-
-        // Only follow up if deferReply succeeded
-        if (interaction.deferred && !interaction.replied) {
-            await interaction.editReply({ content: 'An error occurred while processing your request.' });
-        } else if (!interaction.replied) {
-            await interaction.reply({ content: 'An error occurred while processing your request.', ephemeral: true });
-        } else {
-            // If already replied, optionally log or ignore
-            console.warn('Could not send error message — interaction already replied.');
+      default: {
+        if (interaction.deferred || interaction.replied) break;
+        try {
+            await interaction.reply({
+                content: 'That option isn’t available right now. Please try again, and if it keeps happening let a staff member know.',
+                flags: 64,
+            });
+        } catch (err) {
+            if (err.code !== 40060) console.error('Failed to send unknown-interaction reply:', err);
         }
-    }
+        break;
+      }
+          }
+        } catch (error) {
+          console.error('Error handling interaction:', error);
+      
+          // Try to notify the user without double-acking
+          if (!interaction.replied) {
+              try {
+                  // Works whether we used deferReply or deferUpdate
+                  await interaction.followUp({ content: 'An error occurred while processing your request.', flags: 64 });
+              } catch (e) {
+                  try { await interaction.reply({ content: 'An error occurred while processing your request.', flags: 64 }); } catch (_) {}
+              }
+          } else {
+              console.warn('Could not send error message — interaction already replied.');
+          }
+      }
 });
 
 /**
