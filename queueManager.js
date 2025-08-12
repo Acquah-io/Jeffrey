@@ -228,7 +228,8 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
         if (finalMsg) {
           await finalMsg.edit({ embeds: [embed], components });
         } else {
-          await (await staffChannel.send({ embeds: [embed], components })).pin();
+          // Send and pin a fresh message, then track it as the current pinned doc
+          finalMsg = await (await staffChannel.send({ embeds: [embed], components })).pin();
         }
         const allPins = await staffChannel.messages.fetchPinned();
         for (const msg of allPins.values()) {

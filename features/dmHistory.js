@@ -1,5 +1,5 @@
 // features/dmHistory.js
-const { OpenAI } = require("openai");
+const OpenAI = require("openai");
 const clientDB = require("../database");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -61,11 +61,24 @@ async function needsHistory(query) {
   return probe.choices[0].message.content.trim().startsWith("YES");
 }
 
-/**
- * Latest message in the guild.
- */
+async function resolveGuild(msg) {
+  if (msg.guild) return msg.guild;
+  for (const g of msg.client.guilds.cache.values()) {
+    try {
+      await g.members.fetch(msg.author.id); // throws if not a mutual member
+      return g;
+    } catch (_) {
+      /* keep looking */
+    }
+  }
+  return null;
+}
+
+/** Latest message in the guild. */
 async function lastMessage(msg) {
-    const gid = msg.client.guilds.cache.first().id;
+    const g = await resolveGuild(msg);
+    if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+    const gid = g.id;
     const row = (
       await clientDB.query(
         `SELECT author_tag, content, to_char(ts,'YYYY-MM-DD HH24:MI') ts
@@ -84,7 +97,9 @@ async function lastMessage(msg) {
  * Who most recently said a keyword.
  */
 async function whoSaidTerm(msg, term, originalPrompt) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const row = (
     await clientDB.query(
       `SELECT author_tag, channel_id, id, to_char(ts,'YYYY-MM-DD HH24:MI') ts
@@ -106,7 +121,9 @@ async function whoSaidTerm(msg, term, originalPrompt) {
  * Most recent message by a user (any content).
  */
 async function lastMessageByUser(msg, userRaw, originalPrompt) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const tag = normaliseUser(userRaw);
   const row = (
     await clientDB.query(
@@ -169,7 +186,9 @@ const keywordSearch = async (gid, terms, n = 5) =>
 async function whoAsked(msg, raw) {
   const { terms, date } = parseWhoAsked(raw);
   if (!terms) return msg.reply("Which topic?");
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
 
   let sql = `SELECT author_tag, to_char(ts,'YYYY-MM-DD') d
                FROM public_messages
@@ -186,7 +205,9 @@ async function whoAsked(msg, raw) {
 }
 
 async function lastMention(msg, term) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const r = (
     await clientDB.query(
       `SELECT to_char(ts,'YYYY-MM-DD HH24:MI') t
@@ -201,7 +222,9 @@ async function lastMention(msg, term) {
 }
 
 async function answerLookup(msg, terms) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const q = (
     await clientDB.query(
       `SELECT channel_id, ts FROM public_messages
@@ -226,7 +249,9 @@ async function answerLookup(msg, terms) {
 }
 
 async function lastQuestionBy(msg, userRaw) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const tag = normaliseUser(userRaw);
   const r = (
     await clientDB.query(
@@ -243,7 +268,9 @@ async function lastQuestionBy(msg, userRaw) {
 }
 
 async function msgsByUserOnDate(msg, userRaw, date) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const tag = normaliseUser(userRaw);
   const rows = (
     await clientDB.query(
@@ -263,7 +290,9 @@ async function msgsByUserOnDate(msg, userRaw, date) {
  * Fetch up to five messages about a keyword within a date range.
  */
 async function messagesInRange(msg, keyword, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   const sql = `
     SELECT author_tag, content, to_char(ts,'YYYY-MM-DD HH24:MI') ts
       FROM public_messages
@@ -366,9 +395,11 @@ async function countUserMessages(msg, userRaw, start, end) {
  * Messages in a specific channel within a date range (top 5).
  */
 async function messagesInChannelRange(msg, channelName, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const g = await resolveGuild(msg);
+  if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+  const gid = g.id;
   // Resolve channel → id mapping
-  const guild = msg.client.guilds.cache.get(gid);
+  const guild = g;
   const channel = guild.channels.cache.find(
     c => c.name.toLowerCase() === channelName.toLowerCase().replace('#','')
   );
@@ -471,7 +502,9 @@ async function handleDmMessage(msg) {
   }
 
   if (await needsHistory(t)) {
-    const gid = msg.client.guilds.cache.first().id;
+    const g = await resolveGuild(msg);
+    if (!g) return msg.reply('⛔ I couldn’t find a server we both belong to.');
+    const gid = g.id;
     const rows = await keywordSearch(gid, t, 5);
     if (!rows.length) return msg.reply("No relevant messages found.");
     const ctx = rows

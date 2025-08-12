@@ -12,8 +12,6 @@ const { studentButtons, staffButtons } = require('./features/queueButtons');
 const {
   handleJoinQueue,
   handleLeaveQueue,
-  handleJoinStaffQueue,
-  handleLeaveStaffQueue,
   handleStudentQueueSelect,
   handleStaffQueueSelect,
   handleCreateQueueModal,
@@ -357,7 +355,8 @@ client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
-    await ensureQueueChannel(guild);
+    await ensureStudentQueueChannel(guild);
+    await ensureStaffQueueChannel(guild);
     await studyTips.ensureSettingsChannel(guild);
     studyTips.setupStudyTips(client);
 });
@@ -881,12 +880,6 @@ client.on('interactionCreate', async (interaction) => {
             /* ---------- Staff selectors & buttons ---------- */
             case 'staff-queue-selector':
                 await handleStaffQueueSelect(interaction);
-                break;
-            case 'join-staff':
-                await handleJoinStaffQueue(interaction, user, guild);
-                break;
-            case 'leave-staff':
-                await handleLeaveStaffQueue(interaction, user, guild);
                 break;
             case 'shuffle-queue':
                 await handleShuffleQueue(interaction);
