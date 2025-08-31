@@ -8,12 +8,9 @@ process.on('unhandledRejection', err => {
 const { handleDmMessage } = require('./features/dmHistory');
 const fs = require('fs');
 const path = require('path');
-const { studentButtons, staffButtons } = require('./features/queueButtons');
 const {
   handleJoinQueue,
   handleLeaveQueue,
-  handleJoinStaffQueue,
-  handleLeaveStaffQueue,
   handleStudentQueueSelect,
   handleStaffQueueSelect,
   handleCreateQueueModal,
@@ -29,17 +26,20 @@ const {
 } = require('./queueOperations');
   
 const { ACCESS_TOKEN_DISCORD, CLIENT_ID } = process.env;
+const BACKFILL_ON_START = (process.env.BACKFILL_ON_START || 'false').toLowerCase() === 'true';
 
 const ensureRolesForGuild = require('./ensureRoles.js');
 const assignRolesToMember = require('./assignRoles.js');
 const handleCodeReview = require('./features/codeReview');
 const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
+const createEventFeature = require('./features/createEvents');
 const queueManager = require('./queueManager');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
 
 const clientDB = require('./database');
+const premium = require('./premium');
 
 /**
  * Backfill all past messages from a text channel into Postgres.
@@ -338,10 +338,14 @@ client.once('ready', async () => {
           await assignRolesToMember(member);
         }
         await refreshChannels(guild);
-        // Backfill historical messages for this guild
-        console.log(`Starting backfill for ${guild.name}...`);
-        await backfillGuildHistory(guild);
-        console.log(`Backfill complete for ${guild.name}.`);
+        // Backfill historical messages for this guild (optional)
+        if (BACKFILL_ON_START) {
+          console.log(`Starting backfill for ${guild.name}...`);
+          await backfillGuildHistory(guild);
+          console.log(`Backfill complete for ${guild.name}.`);
+        } else {
+          console.log(`Skipping backfill for ${guild.name} (BACKFILL_ON_START=false).`);
+        }
     }
 });
 
@@ -352,7 +356,8 @@ client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
     await ensureRolesForGuild(guild);
     await setupDocumentationChannels(guild);
-    await ensureQueueChannel(guild);
+    await ensureStudentQueueChannel(guild);
+    await ensureStaffQueueChannel(guild);
 });
 
 /**
@@ -546,6 +551,17 @@ async function ensureStaffQueueChannel(guild) {
  * handleDmMessage(), then piping it through that parser.
  */
 async function handleHistorySlash(interaction) {
+    // Premium Apps: require user entitlement for history queries
+    try {
+      const ok = await premium.hasUserEntitlement(interaction.user.id);
+      if (!ok) {
+        const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+        return interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+      }
+    } catch (e) {
+      // Fail closed to avoid accidental free access if entitlement check errors
+      return interaction.reply({ content: '🔒 Premium required. Please try again later.', ephemeral: true });
+    }
     // Work out which guild’s history we should search.
     // • If the command is invoked inside a server channel we already have
     //   `interaction.guild`.
@@ -833,6 +849,18 @@ client.on('interactionCreate', async (interaction) => {
         await handleCreateQueueModal(interaction);
         return;
     }
+    // Handle event creation modal
+    if (interaction.isModalSubmit() && interaction.customId === 'createEventModal') {
+        try {
+            await createEventFeature.handleModalSubmit(interaction);
+        } catch (err) {
+            console.error('Error handling createEventModal submission:', err);
+            if (!interaction.replied) {
+                await interaction.reply({ content: '❌ Failed to save the event.', ephemeral: true });
+            }
+        }
+        return;
+    }
     if (interaction.isModalSubmit() && interaction.customId?.startsWith('edit-queue-modal-')) {
         await handleEditQueueModal(interaction);
         return;
@@ -856,6 +884,8 @@ client.on('interactionCreate', async (interaction) => {
 
     const { customId, user, guild } = interaction;
 
+    // Queues are free – no guild entitlement checks needed for interactions
+
     try {
         // // Defer the reply to avoid timeout errors and allow time to respond later
         // await interaction.deferReply({ ephemeral: true });
@@ -875,12 +905,6 @@ client.on('interactionCreate', async (interaction) => {
             /* ---------- Staff selectors & buttons ---------- */
             case 'staff-queue-selector':
                 await handleStaffQueueSelect(interaction);
-                break;
-            case 'join-staff':
-                await handleJoinStaffQueue(interaction, user, guild);
-                break;
-            case 'leave-staff':
-                await handleLeaveStaffQueue(interaction, user, guild);
                 break;
             case 'shuffle-queue':
                 await handleShuffleQueue(interaction);
@@ -937,6 +961,18 @@ client.on('messageCreate', async (message) => {
 
     // If DM channel, handle via natural‐language history lookup
     if (message.channel.type === ChannelType.DM) {
+      // Premium Apps: require user entitlement for DM history
+      try {
+        const ok = await premium.hasUserEntitlement(message.author.id);
+        if (!ok) {
+          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+          await message.reply(`🔒 Premium required. ${link}`);
+          return;
+        }
+      } catch (e) {
+        await message.reply('🔒 Premium required. Please try again later.');
+        return;
+      }
       await handleDmMessage(message);
       return;
     }

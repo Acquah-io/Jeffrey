@@ -1,6 +1,7 @@
 // features/codeReview.js
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
 const { getOpenAIResponse } = require('./openaiService');
+const premium = require('../premium');
 
 module.exports = async function handleCodeReview(message) {
   // If we’re already in a thread, only respond when the bot is mentioned
@@ -22,11 +23,23 @@ module.exports = async function handleCodeReview(message) {
 
     collector.on('collect', async (interaction) => {
       if (interaction.customId === "code_review_yes") {
+        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        if (!ok) {
+          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+          await interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+          return;
+        }
         await interaction.reply("Code review is being sent to you via DM.");
         await message.channel.sendTyping();
         const response = await getOpenAIResponse(`Please review the following code: ${message.content}`);
         await message.author.send(response);
       } else if (interaction.customId === "code_review_no") {
+        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        if (!ok) {
+          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+          await interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+          return;
+        }
 
         // ── 1. If this message is ALREADY inside a thread ──────────────
         if (message.channel.isThread()) {

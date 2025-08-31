@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const clientDB = require('../database');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -35,6 +36,20 @@ module.exports = {
             .setPlaceholder('Enter the event date (e.g., YYYY-MM-DD)')
             .setRequired(true);
 
+        const eventTimeInput = new TextInputBuilder()
+            .setCustomId('eventTime')
+            .setLabel('Event Time')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the event time (e.g., 15:00 or 3:00 PM)')
+            .setRequired(false);
+
+        const eventLocationInput = new TextInputBuilder()
+            .setCustomId('eventLocation')
+            .setLabel('Location')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g., Voice Channel #2 or Zoom link')
+            .setRequired(false);
+
         const eventDescriptionInput = new TextInputBuilder()
             .setCustomId('eventDescription')
             .setLabel('Event Description')
@@ -45,6 +60,8 @@ module.exports = {
         modal.addComponents(
             new ActionRowBuilder().addComponents(eventNameInput),
             new ActionRowBuilder().addComponents(eventDateInput),
+            new ActionRowBuilder().addComponents(eventTimeInput),
+            new ActionRowBuilder().addComponents(eventLocationInput),
             new ActionRowBuilder().addComponents(eventDescriptionInput)
         );
 
@@ -55,11 +72,65 @@ module.exports = {
 
         const eventName = interaction.fields.getTextInputValue('eventName');
         const eventDate = interaction.fields.getTextInputValue('eventDate');
-        const eventDescription = interaction.fields.getTextInputValue('eventDescription');
+        const eventTime = interaction.fields.getTextInputValue('eventTime') || '';
+        const eventLocation = interaction.fields.getTextInputValue('eventLocation') || '';
+        const eventDescription = interaction.fields.getTextInputValue('eventDescription') || '';
 
-        await interaction.reply({
-            content: `🎉 Event Created:\n**Name:** ${eventName}\n**Date:** ${eventDate}\n**Description:** ${eventDescription || 'No description provided'}`,
-            ephemeral: true,
-        });
+        // Parse date/time into a single timestamp
+        // Accepts YYYY-MM-DD and optional time (e.g., 15:00 or 3:00 PM)
+        let startAt = null;
+        if (eventDate) {
+            const candidate = eventTime ? `${eventDate} ${eventTime}` : `${eventDate} 12:00`;
+            const parsed = new Date(candidate);
+            if (!isNaN(parsed)) {
+                startAt = parsed;
+            }
+        }
+
+        try {
+            // Ensure events table exists
+            await clientDB.query(`
+                CREATE TABLE IF NOT EXISTS events (
+                  id           BIGSERIAL PRIMARY KEY,
+                  guild_id     TEXT NOT NULL,
+                  name         TEXT NOT NULL,
+                  description  TEXT,
+                  location     TEXT,
+                  start_at     TIMESTAMPTZ,
+                  created_by   TEXT,
+                  created_at   TIMESTAMPTZ DEFAULT NOW()
+                )
+            `);
+
+            // Insert event
+            await clientDB.query(
+                `INSERT INTO events (guild_id, name, description, location, start_at, created_by)
+                 VALUES ($1,$2,$3,$4,$5,$6)`,
+                [
+                    interaction.guildId,
+                    eventName,
+                    eventDescription,
+                    eventLocation,
+                    startAt,
+                    interaction.user?.tag || interaction.user?.id || 'unknown'
+                ]
+            );
+
+            await interaction.reply({
+                content:
+                  `🎉 Event saved!\n` +
+                  `**Name:** ${eventName}\n` +
+                  `**Date:** ${eventDate}${eventTime ? ` ${eventTime}` : ''}\n` +
+                  (eventLocation ? `**Location:** ${eventLocation}\n` : '') +
+                  `**Description:** ${eventDescription || 'No description provided'}`,
+                ephemeral: true,
+            });
+        } catch (err) {
+            console.error('Failed to save event:', err);
+            await interaction.reply({
+                content: '❌ Failed to save the event. Please try again later.',
+                ephemeral: true,
+            });
+        }
     },
 };

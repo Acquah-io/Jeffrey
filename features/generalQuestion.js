@@ -1,6 +1,7 @@
 // features/generalQuestion.js
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
 const { getOpenAIResponse } = require('./openaiService');
+const premium = require('../premium');
 
 module.exports = async function handleGeneralQuestion(message) {
   // If we're already in a thread, only reply when the bot is mentioned
@@ -13,6 +14,13 @@ module.exports = async function handleGeneralQuestion(message) {
 
     if (!cleaned.length) return;
 
+    // Premium check for user
+    const ok = await premium.hasUserEntitlement(message.author.id);
+    if (!ok) {
+      const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+      await message.channel.send(`🔒 Premium required. ${link}`);
+      return;
+    }
     await message.channel.sendTyping();
     const response = await getOpenAIResponse(cleaned, 300);
     await message.channel.send(response);
@@ -34,6 +42,13 @@ module.exports = async function handleGeneralQuestion(message) {
 
     collector.on('collect', async (interaction) => {
       if (interaction.customId === "yes_private_help") {
+        // Premium check for user
+        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        if (!ok) {
+          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+          await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+          return;
+        }
         // Acknowledge the button immediately to avoid timing out
         await interaction.deferUpdate();
         try {
@@ -58,6 +73,14 @@ module.exports = async function handleGeneralQuestion(message) {
       } else if (interaction.customId === "no_private_help") {
         // Acknowledge the button press straight away
         await interaction.deferUpdate();
+
+        // Premium check for user
+        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        if (!ok) {
+          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+          await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+          return;
+        }
 
         let thread;
         try {
