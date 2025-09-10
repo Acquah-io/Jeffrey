@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -39,6 +39,7 @@ const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
 
 const clientDB = require('./database');
+const { ensureSchema } = require('./dbInit');
 const premium = require('./premium');
 
 /**
@@ -97,16 +98,23 @@ async function backfillGuildHistory(guild) {
 }
 
 clientDB.query('SELECT NOW()')
-    .then(res => console.log(`Database connected. Server time: ${res.rows[0].now}`))
+    .then(async (res) => {
+      console.log(`Database connected. Server time: ${res.rows[0].now}`);
+      try {
+        await ensureSchema(clientDB);
+        console.log('Database schema ensured.');
+      } catch (e) {
+        console.error('Failed ensuring DB schema:', e);
+      }
+    })
     .catch(err => console.error('Database connection error:', err));
 
 // Documentation channel messages
 const STAFF_MESSAGE =
 "**Welcome to the Staff Documentation Channel!**\n\n" +
 "As a staff member, here’s what you can do with the Jeffrey Bot:\n\n" +
-"**1️⃣ /createevent** - Create new events.\n" +
-"**2️⃣ /manageusers** - Manage roles and permissions.\n" +
-"**3️⃣ /staffstats** - View staff-specific statistics.\n\n" +
+"**1️⃣ /createevent** – Create new events.\n" +
+"**2️⃣ Staff Queues** – Use the controls in #staff-queues to manage student queues.\n\n" +
 "Update this list as needed! If you need assistance, contact the server admin.";
 
 const STUDENT_MESSAGE =
@@ -114,20 +122,9 @@ const STUDENT_MESSAGE =
 "Here’s what you can do with the Jeffrey Bot:\n\n" +
 "## Queue actions\n" +
 "**1️⃣ /viewevents** – See upcoming events.\n" +
-"**2️⃣ /askquestion** – Ask staff or mentors a question.\n" +
-"**3️⃣ /resources** – Access helpful resources.\n\n" +
-"## Conversation‑history queries _(ask these in a DM to Jeffrey)_\n" +
-"• **Who asked about \\\"something\\\" in the chat?**\n" +
-"• **When was \\\"something\\\" last mentioned?**\n" +
-"• **Who said \\\"something\\\" in the chat?**\n" +
-"• **What was the last message in the chat?**\n" +
-"• **What was mentioned yesterday?** (or last week / last Friday)\n" +
-"• **What did @Alice say on 2025-04-21?**\n" +
-"• **What did we talk about in #general last Friday?**\n" +
-"• **How many messages has @Bob sent in the last 24 hours?**\n" +
-"• **What did we say about arrays between 2025-04-01 and 2025-04-10?**\n" +
-"• **What was discussed in #help last week?**\n\n" +
-"_Type any of the above (or similar) in a private DM to Jeffrey and you’ll get an instant answer pulled from the server’s chat history._\n\n" +
+"**2️⃣ Join/Leave** – Use the menu/buttons in #student-queues to join or leave queues.\n\n" +
+"## Tips\n" +
+"You can DM Jeffrey natural‑language history questions (e.g., ‘who asked about arrays?’, ‘what was discussed last Friday?’) if Premium is enabled.\n\n" +
 "Ask if you need help!";
 
 // Initialise the bot client
@@ -194,9 +191,9 @@ async function setupDocumentationChannels(guild) {
                 type: ChannelType.GuildText,
                 parent: category.id,
                 permissionOverwrites: [
-                    { id: guild.id, deny: ['ViewChannel'] },
-                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] },
-                    ...(staffRole ? [{ id: staffRole.id, allow: ['ViewChannel', 'SendMessages'] }] : []),
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels] },
+                    ...(staffRole ? [{ id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : []),
                 ],
             });
         }
@@ -212,10 +209,10 @@ async function setupDocumentationChannels(guild) {
                 type: ChannelType.GuildText,
                 parent: category.id,
                 permissionOverwrites: [
-                    { id: guild.id, deny: ['ViewChannel'] },
-                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] },
-                    ...(studentRole ? [{ id: studentRole.id, allow: ['ViewChannel', 'SendMessages'] }] : []),
-                    ...(staffRole   ? [{ id: staffRole.id,   allow: ['ViewChannel']           }] : []),
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels] },
+                    ...(studentRole ? [{ id: studentRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : []),
+                    ...(staffRole   ? [{ id: staffRole.id,   allow: [PermissionFlagsBits.ViewChannel] }] : []),
                 ],
             });
         }
@@ -439,19 +436,13 @@ async function ensureStudentQueueChannel(guild) {
                 name: 'student-queues',
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
-                    {
-                        id: guild.id, // @everyone
-                        deny: ['ViewChannel'],
-                    },
-                    {
-                        id: client.user.id,                     // 👈 give the bot full sight
-                        allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'],
-                    },
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels] },
                     ...(studentRole
                         ? [
                               {
                                   id: studentRole.id,
-                                  allow: ['ViewChannel', 'SendMessages'],
+                                  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
                               },
                           ]
                         : []),
@@ -464,8 +455,7 @@ async function ensureStudentQueueChannel(guild) {
                 const hasStudentOverwrite = studentQueueChannel.permissionOverwrites.cache.has(studentRole.id);
                 if (!hasStudentOverwrite) {
                     await studentQueueChannel.permissionOverwrites.edit(studentRole, {
-                        ViewChannel: true,
-                        SendMessages: true,
+                      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
                     });
                     console.log(`Updated "student-queues" channel permissions to include Students role in ${guild.name}.`);
                 }
@@ -476,10 +466,12 @@ async function ensureStudentQueueChannel(guild) {
         const botId = client.user.id;
         if (!studentQueueChannel.permissionOverwrites.cache.has(botId)) {
             await studentQueueChannel.permissionOverwrites.edit(botId, {
-                ViewChannel: true,
-                SendMessages: true,
-                ManageMessages: true,
-                ManageChannels: true,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ManageMessages,
+                PermissionFlagsBits.ManageChannels,
+              ]
             });
         }
 
@@ -511,13 +503,13 @@ async function ensureStaffQueueChannel(guild) {
                 name: 'staff-queues',
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
-                    { id: guild.id, deny: ['ViewChannel'] },
-                    { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ManageMessages', 'ManageChannels'] },
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels] },
                     ...(staffRole
                         ? [
                               {
                                   id: staffRole.id,
-                                  allow: ['ViewChannel', 'SendMessages'],
+                                  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
                               },
                           ]
                         : []),
@@ -530,10 +522,12 @@ async function ensureStaffQueueChannel(guild) {
         const botId = client.user.id;
         if (!staffQueueChannel.permissionOverwrites.cache.has(botId)) {
             await staffQueueChannel.permissionOverwrites.edit(botId, {
-                ViewChannel: true,
-                SendMessages: true,
-                ManageMessages: true,
-                ManageChannels: true,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ManageMessages,
+                PermissionFlagsBits.ManageChannels,
+              ]
             });
         }
 
@@ -595,9 +589,6 @@ async function handleHistorySlash(interaction) {
       case 'last_mentioned':
         query = `When was ${interaction.options.getString('term')} last mentioned?`;
         break;
-      case 'last_message':
-        query = 'What was the last message in the chat?';
-        break;
       case 'keyword_between': {
         const term      = interaction.options.getString('term');
         const startStr  = interaction.options.getString('start');
@@ -621,15 +612,10 @@ async function handleHistorySlash(interaction) {
             `SELECT author_tag, content, ts
                FROM public_messages
               WHERE guild_id = $1
-                AND content ILIKE $2
+                AND tsv @@ plainto_tsquery('english',$2)
                 AND ts BETWEEN $3 AND $4
               ORDER BY ts`,
-            [
-              guildId,
-              '%' + term + '%',
-              startDate,
-              new Date(endDate.getTime() + 24 * 60 * 60 * 1000),
-            ]
+            [ guildId, term, startDate, new Date(endDate.getTime() + 24 * 60 * 60 * 1000) ]
           );
 
           const count = rows.length;

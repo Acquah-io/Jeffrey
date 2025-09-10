@@ -3,7 +3,8 @@ const { getQueue, addStudent, removeStudent, studentActiveQueue, listQueues, lis
  * When staff click “Delete User”, show a dropdown of current queue members.
  */
 async function handleDeleteUserButton(interaction) {
-  if (!interaction.member.permissions.has('ManageGuild')) {
+  const { PermissionFlagsBits } = require('discord.js');
+  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
   }
   const serverId = interaction.guild.id;
@@ -95,7 +96,8 @@ async function handleStudentQueueSelect(interaction) {
 // Existing handlers...
 
 async function handleBlacklistButton(interaction) {
-  if (!interaction.member.permissions.has('ManageGuild')) {
+  const { PermissionFlagsBits } = require('discord.js');
+  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
   }
   const serverId = interaction.guild.id;
@@ -184,7 +186,8 @@ async function handleStaffQueueSelect(interaction) {
  * Show a modal to create a new queue when the “Create Queue” button is pressed.
  */
 async function handleCreateQueueButton(interaction) {
-  if (!interaction.member.permissions.has('ManageGuild')) {
+  const { PermissionFlagsBits } = require('discord.js');
+  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
   }
 

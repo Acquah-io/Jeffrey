@@ -90,12 +90,18 @@ async function buildStudentQueueSelector(guild, userId) {
         .setCustomId('student-queue-selector')
         .setPlaceholder('Choose a queue');
 
+    let addedAny = false;
     for (const q of queues) {
         const blocked = await isUserBlacklisted(guild.id, q.id, userId);
-        if (!blocked) menu.addOptions({ label: `${q.queue_name} (${q.count})`, value: String(q.id) });
+        if (!blocked) {
+          menu.addOptions({ label: `${q.queue_name} (${q.count})`, value: String(q.id) });
+          addedAny = true;
+        }
     }
-    if (!menu.options.length)
-        menu.addOptions({ label: 'No queues available', value: 'none', default: true }).setDisabled(true);
+    if (!addedAny) {
+      menu.addOptions({ label: 'No queues available', value: 'none' });
+      menu.setDisabled(true);
+    }
 
     return new ActionRowBuilder().addComponents(menu);
 }
@@ -228,12 +234,14 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
         if (finalMsg) {
           await finalMsg.edit({ embeds: [embed], components });
         } else {
-          await (await staffChannel.send({ embeds: [embed], components })).pin();
+          const newMsg = await staffChannel.send({ embeds: [embed], components });
+          await newMsg.pin();
+          finalMsg = newMsg;
         }
         const allPins = await staffChannel.messages.fetchPinned();
         for (const msg of allPins.values()) {
             if (
-                msg.id !== finalMsg.id &&
+                finalMsg && msg.id !== finalMsg.id &&
                 msg.embeds[0]?.title === 'Queue Management for Staff'
             ) {
                 await msg.unpin().catch(() => null);

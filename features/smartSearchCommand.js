@@ -1,6 +1,6 @@
 // features/smartSearchCommand.js
 // Top-level:   /smart_search
-// Variants:    /smart_search who_asked …, last_mentioned …, etc.
+// Variants:    /smart_search who_asked …, last_mentioned …, etc. (last_message removed)
 //
 // UK English used throughout.
 
@@ -24,9 +24,7 @@ module.exports = {
             .setRequired(true)))
 
 
-    .addSubcommand(sub =>
-      sub.setName('last_message')
-         .setDescription('What was the last message in the chat?'))
+    // Note: 'last_message' subcommand removed per requirements
 
 
 

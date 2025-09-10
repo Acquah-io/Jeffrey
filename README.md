@@ -26,6 +26,8 @@ Heroku reads the `Procfile` and runs `npm start` continuously. Set the same envi
 - Payments (Premium Apps): Premium is required for AI features only; queues and events are free.
   - Env vars:
     - `PREMIUM_SKU_USER` (recommended): comma-separated SKU IDs for user‑level Premium (unlocks AI features: code review, Q&A, history).
+
+Command registration: The bot registers slash commands from the `features/` directory on startup. The optional `deploy-commands.js` script now reads from `features/` too, so both paths stay in sync.
     - `PREMIUM_PURCHASE_URL` (optional): link shown when prompting users to subscribe.
   - Behavior: If `PREMIUM_SKU_USER` is unset, all features run free (dev mode). When set, the bot checks user entitlements before invoking OpenAI features and replies with a friendly subscribe prompt if missing.
 

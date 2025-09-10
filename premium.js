@@ -38,6 +38,8 @@ async function fetchEntitlements(params) {
     // Basic filtering: non-deleted and not obviously expired
     return (Array.isArray(entitlements) ? entitlements : []).filter(e => !e.deleted);
   } catch (err) {
+    const status = err?.status ?? err?.code ?? 'unknown';
+    console.warn('Entitlement fetch failed:', status, err?.message || String(err));
     // If endpoint not accessible (e.g., Premium not enabled), fail closed as not entitled
     return [];
   }

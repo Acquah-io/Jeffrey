@@ -22,6 +22,10 @@ module.exports = async function handleCodeReview(message) {
     const collector = reply.createMessageComponentCollector({ componentType: ComponentType.Button });
 
     collector.on('collect', async (interaction) => {
+      // Only the original author can confirm
+      if (interaction.user.id !== message.author.id) {
+        return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
+      }
       if (interaction.customId === "code_review_yes") {
         const ok = await premium.hasUserEntitlement(interaction.user.id);
         if (!ok) {
@@ -77,9 +81,17 @@ module.exports = async function handleCodeReview(message) {
           });
         } catch (err) {
           console.error('Failed to create thread for code review:', err);
-          return interaction.editReply(
-            '⛔ I don’t have permission to create a thread here.'
-          );
+          await interaction.editReply('⛔ I don’t have permission to create a thread here. I’ll reply in this channel instead.');
+          try {
+            await message.channel.sendTyping();
+            const response = await getOpenAIResponse(
+              `Please review the following code: ${message.content}`
+            );
+            await message.reply(response);
+          } catch (e) {
+            console.error('Fallback code review failed:', e);
+          }
+          return;
         }
 
         await interaction.editReply(

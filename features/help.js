@@ -42,8 +42,6 @@ module.exports = {
         .setDescription('Commands available to staff members')
         .addFields(
           { name: '/createevent', value: 'Create a new event for the server.' },
-          { name: '/manageusers', value: 'Manage user permissions and roles.' },
-          { name: '/staffstats',  value: 'View staff-specific statistics.' },
         )
         .setFooter({ text: 'For further assistance, contact the server admin.' });
 
@@ -57,8 +55,6 @@ module.exports = {
         .setDescription('Commands available to students')
         .addFields(
           { name: '/viewevents',  value: 'View upcoming events on the server.' },
-          { name: '/askquestion', value: 'Ask a question to staff or mentors.' },
-          { name: '/resources',   value: 'Get helpful resources and links.' },
         )
         .setFooter({ text: 'For further assistance, contact a staff member.' });
 

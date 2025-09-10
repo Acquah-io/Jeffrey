@@ -41,6 +41,10 @@ module.exports = async function handleGeneralQuestion(message) {
     const collector = reply.createMessageComponentCollector({ componentType: ComponentType.Button });
 
     collector.on('collect', async (interaction) => {
+      // Only the original author can choose
+      if (interaction.user.id !== message.author.id) {
+        return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
+      }
       if (interaction.customId === "yes_private_help") {
         // Premium check for user
         const ok = await premium.hasUserEntitlement(interaction.user.id);
@@ -90,10 +94,18 @@ module.exports = async function handleGeneralQuestion(message) {
           });
         } catch (err) {
           console.error("Failed to create thread for question:", err);
-          return interaction.followUp({
-            content: "⛔ I don’t have permission to create a thread here.",
+          await interaction.followUp({
+            content: "⛔ I don’t have permission to create a thread here. I’ll reply in this channel instead.",
             ephemeral: true
           });
+          try {
+            await message.channel.sendTyping();
+            const response = await getOpenAIResponse(message.content, 300);
+            await message.reply(response);
+          } catch (e) {
+            console.error('Fallback answer failed:', e);
+          }
+          return;
         }
 
         await interaction.followUp({

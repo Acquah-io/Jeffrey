@@ -1,5 +1,5 @@
 // features/dmHistory.js
-const { OpenAI } = require("openai");
+const OpenAI = require("openai");
 const clientDB = require("../database");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -33,6 +33,11 @@ const EXPLICIT_HISTORY =
   /^(who asked|who sent|when .*asked|show me .*answers?|what (?:was|were) (?:mentioned|discussed|talked about|the discussion)|what did we (?:talk|chat) about|who said|what was the last message|how many messages|between \d{4}-\d{2}-\d{2} and \d{4}-\d{2}-\d{2}|in the last \d+ (?:hours?|days?))/i;
   const normaliseUser = (s) => s.replace(/[<@!>]/g, "").toLowerCase().trim();
 
+function getGuildId(msg) {
+  const first = msg?.client?.guilds?.cache?.first?.();
+  return first?.id || null;
+}
+
 function parseWhoAsked(txt) {
   const lower = txt.toLowerCase();
   const d = lower.match(/on (\d{4}-\d{2}-\d{2})/);
@@ -65,7 +70,8 @@ async function needsHistory(query) {
  * Latest message in the guild.
  */
 async function lastMessage(msg) {
-    const gid = msg.client.guilds.cache.first().id;
+    const gid = getGuildId(msg);
+    if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
     const row = (
       await clientDB.query(
         `SELECT author_tag, content, to_char(ts,'YYYY-MM-DD HH24:MI') ts
@@ -84,7 +90,8 @@ async function lastMessage(msg) {
  * Who most recently said a keyword.
  */
 async function whoSaidTerm(msg, term, originalPrompt) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const row = (
     await clientDB.query(
       `SELECT author_tag, channel_id, id, to_char(ts,'YYYY-MM-DD HH24:MI') ts
@@ -106,7 +113,8 @@ async function whoSaidTerm(msg, term, originalPrompt) {
  * Most recent message by a user (any content).
  */
 async function lastMessageByUser(msg, userRaw, originalPrompt) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const tag = normaliseUser(userRaw);
   const row = (
     await clientDB.query(
@@ -154,22 +162,22 @@ function parseDateRange(phrase) {
 }
 
 /* ---------- retrieval ---------- */
-const keywordSearch = async (gid, terms, n = 5) =>
-  (
-    await clientDB.query(
-      `SELECT author_tag, content, ts
-         FROM public_messages
-        WHERE guild_id=$1 AND tsv @@ plainto_tsquery('english',$2)
-        ORDER BY ts DESC LIMIT $3`,
-      [gid, terms, n]
-    )
-  ).rows;
+const keywordSearch = async (gid, terms, n = 5) => (
+  await clientDB.query(
+    `SELECT author_tag, content, to_char(ts,'YYYY-MM-DD HH24:MI') AS ts_str
+       FROM public_messages
+      WHERE guild_id=$1 AND tsv @@ plainto_tsquery('english',$2)
+      ORDER BY ts DESC LIMIT $3`,
+    [gid, terms, n]
+  )
+).rows;
 
 /* ---------- canned look-ups ---------- */
 async function whoAsked(msg, raw) {
   const { terms, date } = parseWhoAsked(raw);
   if (!terms) return msg.reply("Which topic?");
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
 
   let sql = `SELECT author_tag, to_char(ts,'YYYY-MM-DD') d
                FROM public_messages
@@ -186,7 +194,8 @@ async function whoAsked(msg, raw) {
 }
 
 async function lastMention(msg, term) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const r = (
     await clientDB.query(
       `SELECT to_char(ts,'YYYY-MM-DD HH24:MI') t
@@ -201,7 +210,8 @@ async function lastMention(msg, term) {
 }
 
 async function answerLookup(msg, terms) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const q = (
     await clientDB.query(
       `SELECT channel_id, ts FROM public_messages
@@ -226,7 +236,8 @@ async function answerLookup(msg, terms) {
 }
 
 async function lastQuestionBy(msg, userRaw) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const tag = normaliseUser(userRaw);
   const r = (
     await clientDB.query(
@@ -243,7 +254,8 @@ async function lastQuestionBy(msg, userRaw) {
 }
 
 async function msgsByUserOnDate(msg, userRaw, date) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const tag = normaliseUser(userRaw);
   const rows = (
     await clientDB.query(
@@ -263,7 +275,8 @@ async function msgsByUserOnDate(msg, userRaw, date) {
  * Fetch up to five messages about a keyword within a date range.
  */
 async function messagesInRange(msg, keyword, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const sql = `
     SELECT author_tag, content, to_char(ts,'YYYY-MM-DD HH24:MI') ts
       FROM public_messages
@@ -291,7 +304,8 @@ async function messagesInRange(msg, keyword, start, end) {
  * Return up to five messages (any topic) within a given date range.
  */
 async function messagesInDateRange(msg, start, end) {
-    const gid = msg.client.guilds.cache.first().id;
+    const gid = getGuildId(msg);
+    if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
     const sql = `
       SELECT author_tag,
              content,
@@ -319,7 +333,8 @@ async function messagesInDateRange(msg, start, end) {
  * Return a short summary (count + first/last mention) of a keyword in a date range.
  */
 async function summaryOfKeyword(msg, keyword, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const sql = `
     WITH hits AS (
       SELECT author_tag, content, ts
@@ -349,7 +364,8 @@ async function summaryOfKeyword(msg, keyword, start, end) {
  * Count messages by user in a date range.
  */
 async function countUserMessages(msg, userRaw, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const tag = normaliseUser(userRaw);
   const { rows } = await clientDB.query(
     `SELECT COUNT(*) AS c
@@ -366,7 +382,8 @@ async function countUserMessages(msg, userRaw, start, end) {
  * Messages in a specific channel within a date range (top 5).
  */
 async function messagesInChannelRange(msg, channelName, start, end) {
-  const gid = msg.client.guilds.cache.first().id;
+  const gid = getGuildId(msg);
+  if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   // Resolve channel → id mapping
   const guild = msg.client.guilds.cache.get(gid);
   const channel = guild.channels.cache.find(
@@ -471,11 +488,12 @@ async function handleDmMessage(msg) {
   }
 
   if (await needsHistory(t)) {
-    const gid = msg.client.guilds.cache.first().id;
+    const gid = getGuildId(msg);
+    if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
     const rows = await keywordSearch(gid, t, 5);
     if (!rows.length) return msg.reply("No relevant messages found.");
     const ctx = rows
-      .map((r) => `${r.author_tag} (${r.ts.toISOString().slice(0, 16)}): ${r.content}`)
+      .map((r) => `${r.author_tag} (${r.ts_str}): ${r.content}`)
       .join("\n");
     const ans = await openai.chat.completions.create({
       model: "gpt-4o-mini",
