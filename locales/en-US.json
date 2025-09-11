@@ -1,0 +1,34 @@
+{
+  "docs": {
+    "staff": "**Welcome to the Staff Documentation Channel!**\n\nAs a staff member, here’s what you can do with the Jeffrey Bot:\n\n**1️⃣ /createevent** – Create new events.\n**2️⃣ Staff Queues** – Use the controls in #staff-queues to manage student queues.\n\nUpdate this list as needed! If you need assistance, contact the server admin.",
+    "student": "**Welcome to the Student Documentation Channel!**\n\nHere’s what you can do with the Jeffrey Bot:\n\n## Queue actions\n**1️⃣ /viewevents** – See upcoming events.\n**2️⃣ Join/Leave** – Use the menu/buttons in #student-queues to join or leave queues.\n\n## Tips\nYou can DM Jeffrey natural‑language history questions (e.g., ‘who asked about arrays?’, ‘what was discussed last Friday?’) if Premium is enabled.\n\nAsk if you need help!"
+  },
+  "queue": {
+    "student": {
+      "title": "Queue Options for Students",
+      "descPrefix": "Use the menu below to pick a queue, then click **Join** or **Leave**.\n\n",
+      "noQueues": "No queues yet.",
+      "buttons": { "join": "Join", "leave": "Leave" }
+    },
+    "staff": {
+      "title": "Queue Management for Staff",
+      "buffer": "Updating queue display... :arrows_counterclockwise:"
+    },
+    "buttons": {
+      "shuffle": "Shuffle queue",
+      "clear": "Clear queue",
+      "blacklist": "Blacklist Users",
+      "delete_user": "Delete User",
+      "edit": "Edit queue",
+      "create": "Create Queue"
+    }
+  },
+  "language": {
+    "set_ok_user": "✅ Your language is now {locale}",
+    "set_ok_guild": "✅ Server language is now {locale}",
+    "need_manage_guild": "⛔ You need Manage Server to change the server language.",
+    "choose_locale": "Choose a language",
+    "scope": { "me": "Me", "server": "Server" }
+  }
+}
+

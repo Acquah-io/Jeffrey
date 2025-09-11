@@ -110,22 +110,15 @@ clientDB.query('SELECT NOW()')
     .catch(err => console.error('Database connection error:', err));
 
 // Documentation channel messages
-const STAFF_MESSAGE =
-"**Welcome to the Staff Documentation Channel!**\n\n" +
-"As a staff member, here’s what you can do with the Jeffrey Bot:\n\n" +
-"**1️⃣ /createevent** – Create new events.\n" +
-"**2️⃣ Staff Queues** – Use the controls in #staff-queues to manage student queues.\n\n" +
-"Update this list as needed! If you need assistance, contact the server admin.";
-
-const STUDENT_MESSAGE =
-"**Welcome to the Student Documentation Channel!**\n\n" +
-"Here’s what you can do with the Jeffrey Bot:\n\n" +
-"## Queue actions\n" +
-"**1️⃣ /viewevents** – See upcoming events.\n" +
-"**2️⃣ Join/Leave** – Use the menu/buttons in #student-queues to join or leave queues.\n\n" +
-"## Tips\n" +
-"You can DM Jeffrey natural‑language history questions (e.g., ‘who asked about arrays?’, ‘what was discussed last Friday?’) if Premium is enabled.\n\n" +
-"Ask if you need help!";
+const { t, getGuildLocale } = require('./i18n');
+async function staffMessageFor(guild) {
+  const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
+  return t(locale, 'docs.staff');
+}
+async function studentMessageFor(guild) {
+  const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
+  return t(locale, 'docs.student');
+}
 
 // Initialise the bot client
 const client = new Client({
@@ -218,8 +211,8 @@ async function setupDocumentationChannels(guild) {
         }
 
         // Post or update documentation messages with pinned behavior
-        await updateDocumentationMessage(guild, 'staff-docs', STAFF_MESSAGE);
-        await updateDocumentationMessage(guild, 'student-docs', STUDENT_MESSAGE);
+        await updateDocumentationMessage(guild, 'staff-docs', await staffMessageFor(guild));
+        await updateDocumentationMessage(guild, 'student-docs', await studentMessageFor(guild));
 
         console.log(`Documentation channels setup complete for ${guild.name}.`);
     } catch (error) {
@@ -405,7 +398,7 @@ client.on('guildMemberAdd', async (member) => {
     // Now ensure that if the member is a student, the student channels are created/updated
     if (studentRole && member.roles.cache.has(studentRole.id)) {
         await ensureStudentQueueChannel(member.guild);
-        await updateDocumentationMessage(member.guild, 'student-docs', STUDENT_MESSAGE);
+        await updateDocumentationMessage(member.guild, 'student-docs', await studentMessageFor(member.guild));
     }
 });
 
@@ -455,7 +448,8 @@ async function ensureStudentQueueChannel(guild) {
                 const hasStudentOverwrite = studentQueueChannel.permissionOverwrites.cache.has(studentRole.id);
                 if (!hasStudentOverwrite) {
                     await studentQueueChannel.permissionOverwrites.edit(studentRole, {
-                      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+                      ViewChannel: true,
+                      SendMessages: true,
                     });
                     console.log(`Updated "student-queues" channel permissions to include Students role in ${guild.name}.`);
                 }
@@ -466,12 +460,10 @@ async function ensureStudentQueueChannel(guild) {
         const botId = client.user.id;
         if (!studentQueueChannel.permissionOverwrites.cache.has(botId)) {
             await studentQueueChannel.permissionOverwrites.edit(botId, {
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.SendMessages,
-                PermissionFlagsBits.ManageMessages,
-                PermissionFlagsBits.ManageChannels,
-              ]
+              ViewChannel: true,
+              SendMessages: true,
+              ManageMessages: true,
+              ManageChannels: true,
             });
         }
 
@@ -522,12 +514,10 @@ async function ensureStaffQueueChannel(guild) {
         const botId = client.user.id;
         if (!staffQueueChannel.permissionOverwrites.cache.has(botId)) {
             await staffQueueChannel.permissionOverwrites.edit(botId, {
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.SendMessages,
-                PermissionFlagsBits.ManageMessages,
-                PermissionFlagsBits.ManageChannels,
-              ]
+              ViewChannel: true,
+              SendMessages: true,
+              ManageMessages: true,
+              ManageChannels: true,
             });
         }
 
@@ -1004,7 +994,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
       if (member.roles.cache.some(role => role.name.toLowerCase() === 'students')) {
         // Re-create or ensure the student-queues channel and student-docs channel
         await ensureStudentQueueChannel(newPresence.guild);
-        await updateDocumentationMessage(newPresence.guild, 'student-docs', STUDENT_MESSAGE);
+        await updateDocumentationMessage(newPresence.guild, 'student-docs', await studentMessageFor(newPresence.guild));
       }
     }
   } catch (err) {

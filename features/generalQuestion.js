@@ -1,6 +1,7 @@
 // features/generalQuestion.js
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
 const { getOpenAIResponse } = require('./openaiService');
+const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
 
 module.exports = async function handleGeneralQuestion(message) {
@@ -22,7 +23,8 @@ module.exports = async function handleGeneralQuestion(message) {
       return;
     }
     await message.channel.sendTyping();
-    const response = await getOpenAIResponse(cleaned, 300);
+    const locale = await preferredLocale({ userId: message.author.id, guildId: message.guildId, discordLocale: message.guild?.preferredLocale });
+    const response = await getOpenAIResponse(cleaned, 300, locale);
     await message.channel.send(response);
     return;
   }
@@ -57,7 +59,8 @@ module.exports = async function handleGeneralQuestion(message) {
         await interaction.deferUpdate();
         try {
           // Generate the private help message
-          const response = await getOpenAIResponse(message.content, 300);
+          const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
+          const response = await getOpenAIResponse(message.content, 300, locale);
 
           // Attempt to DM the user
           await interaction.user.send(response);
@@ -115,7 +118,8 @@ module.exports = async function handleGeneralQuestion(message) {
 
         try {
           await thread.sendTyping();
-          const response = await getOpenAIResponse(message.content, 300);
+          const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
+          const response = await getOpenAIResponse(message.content, 300, locale);
           await thread.send(response);
         } catch (err) {
           console.error("Failed to answer question in thread:", err);

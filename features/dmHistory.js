@@ -1,5 +1,6 @@
 // features/dmHistory.js
 const OpenAI = require("openai");
+const { preferredLocale } = require('../i18n');
 const clientDB = require("../database");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -11,6 +12,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
  * @param {string} userPrompt  original DM text
  */
 async function respondWithLLM(msg, snippets, userPrompt) {
+  const locale = await preferredLocale({ userId: msg.author?.id, discordLocale: msg?.client?.user?.locale });
   const answer = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -18,8 +20,7 @@ async function respondWithLLM(msg, snippets, userPrompt) {
       {
         role: "system",
         content:
-          "You are Jeffrey, an assistant who answers using the provided Discord history. " +
-          "If the history does not answer the question, say you couldn’t find anything."
+          `You are Jeffrey, an assistant who answers using the provided Discord history. If the history does not answer the question, say you couldn’t find anything. Respond in ${locale}.`
       },
       { role: "system", content: `History:\n${snippets}` },
       { role: "user", content: userPrompt }

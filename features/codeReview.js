@@ -1,6 +1,7 @@
 // features/codeReview.js
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
 const { getOpenAIResponse } = require('./openaiService');
+const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
 
 module.exports = async function handleCodeReview(message) {
@@ -35,7 +36,8 @@ module.exports = async function handleCodeReview(message) {
         }
         await interaction.reply("Code review is being sent to you via DM.");
         await message.channel.sendTyping();
-        const response = await getOpenAIResponse(`Please review the following code: ${message.content}`);
+        const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
+        const response = await getOpenAIResponse(`Please review the following code: ${message.content}` , 1000, locale);
         await message.author.send(response);
       } else if (interaction.customId === "code_review_no") {
         const ok = await premium.hasUserEntitlement(interaction.user.id);
@@ -54,8 +56,11 @@ module.exports = async function handleCodeReview(message) {
 
           try {
             await message.channel.sendTyping();
+            const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
             const response = await getOpenAIResponse(
-              `Please review the following code: ${message.content}`
+              `Please review the following code: ${message.content}`,
+              1000,
+              locale
             );
             await message.channel.send(response);
           } catch (err) {
@@ -84,8 +89,11 @@ module.exports = async function handleCodeReview(message) {
           await interaction.editReply('⛔ I don’t have permission to create a thread here. I’ll reply in this channel instead.');
           try {
             await message.channel.sendTyping();
+            const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
             const response = await getOpenAIResponse(
-              `Please review the following code: ${message.content}`
+              `Please review the following code: ${message.content}`,
+              1000,
+              locale
             );
             await message.reply(response);
           } catch (e) {
@@ -100,8 +108,11 @@ module.exports = async function handleCodeReview(message) {
 
         try {
           await thread.sendTyping();
+          const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
           const response = await getOpenAIResponse(
-            `Please review the following code: ${message.content}`
+            `Please review the following code: ${message.content}`,
+            1000,
+            locale
           );
           await thread.send(response);
         } catch (err) {

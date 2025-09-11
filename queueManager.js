@@ -1,4 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { t, getGuildLocale } = require('./i18n');
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -113,11 +114,12 @@ async function buildStudentQueueSelector(guild, userId) {
 /** Pin / refresh the student panel. */
 async function setupStudentQueueChannel(studentChannel, userPreviewId = null) {
     try {
+        const locale = await getGuildLocale(studentChannel.guild.id, studentChannel.guild.preferredLocale || 'en-US');
         const queues = await listQueues(studentChannel.guild.id);
         // Build a description of every queue and its members
         let embedDescription;
         if (!queues.length) {
-          embedDescription = 'No queues yet.';
+          embedDescription = t(locale, 'queue.student.noQueues');
         } else {
           const parts = [];
           for (const q of queues) {
@@ -134,8 +136,8 @@ async function setupStudentQueueChannel(studentChannel, userPreviewId = null) {
         }
 
         const embed = new EmbedBuilder()
-          .setTitle('Queue Options for Students')
-          .setDescription(`Use the menu below to pick a queue, then click **Join** or **Leave**.\n\n${embedDescription}`)
+          .setTitle(t(locale, 'queue.student.title'))
+          .setDescription(`${t(locale, 'queue.student.descPrefix')}${embedDescription}`)
           .setColor('#00b0ff');
 
         const selectorRow = await buildStudentQueueSelector(
@@ -144,12 +146,12 @@ async function setupStudentQueueChannel(studentChannel, userPreviewId = null) {
         );
 
         const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('join-student').setLabel('Join').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('leave-student').setLabel('Leave').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('join-student').setLabel(t(locale, 'queue.student.buttons.join')).setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('leave-student').setLabel(t(locale, 'queue.student.buttons.leave')).setStyle(ButtonStyle.Danger)
         );
 
         const pinned = await studentChannel.messages.fetchPinned();
-        let msg      = pinned.find(m => m.embeds[0]?.title === 'Queue Options for Students');
+        let msg      = pinned.find(m => m.embeds[0]?.title === t(locale, 'queue.student.title'));
 
         msg
           ? await msg.edit({ embeds: [embed], components: [selectorRow, buttons] })
@@ -162,13 +164,14 @@ async function setupStudentQueueChannel(studentChannel, userPreviewId = null) {
 /** Pin / refresh the staff panel. */
 async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
     console.log('DEBUG staff channel:', staffChannel?.id);
+    const locale = await getGuildLocale(staffChannel.guild.id, staffChannel.guild.preferredLocale || 'en-US');
     // Show buffering embed while we rebuild
     const bufferingEmbed = new EmbedBuilder()
-      .setTitle('Queue Management for Staff')
-      .setDescription('Updating queue display... :arrows_counterclockwise:')
+      .setTitle(t(locale, 'queue.staff.title'))
+      .setDescription(t(locale, 'queue.staff.buffer'))
       .setColor('#ffcc00');
     const pinnedMsgs = await staffChannel.messages.fetchPinned();
-    let bufferMsg = pinnedMsgs.find(m => m.embeds[0]?.title === 'Queue Management for Staff');
+    let bufferMsg = pinnedMsgs.find(m => m.embeds[0]?.title === t(locale, 'queue.staff.title'));
     if (bufferMsg) {
       await bufferMsg.edit({ embeds: [bufferingEmbed] });
     } else {
@@ -184,7 +187,7 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
         // Build a description of every queue and its members
         let embedDescription;
         if (!queues.length) {
-          embedDescription = 'No queues yet.';
+          embedDescription = t(locale, 'queue.student.noQueues');
         } else {
           const parts = [];
           for (const q of queues) {
@@ -201,17 +204,17 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
           embedDescription = parts.join('\n\n');
         }
         const embed = new EmbedBuilder()
-          .setTitle('Queue Management for Staff')
+          .setTitle(t(locale, 'queue.staff.title'))
           .setDescription(embedDescription)
           .setColor('#ffcc00');
 
         const selectorRow = buildStaffQueueSelector(queues, selectedId);
         const controlRow  = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('shuffle-queue').setLabel('Shuffle queue').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('clear-queue').setLabel('Clear queue').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('queue-blacklist').setLabel('Blacklist Users').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('queue-delete-user').setLabel('Delete User').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('edit-queue').setLabel('Edit queue').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('shuffle-queue').setLabel(t(locale,'queue.buttons.shuffle')).setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('clear-queue').setLabel(t(locale,'queue.buttons.clear')).setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('queue-blacklist').setLabel(t(locale,'queue.buttons.blacklist')).setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('queue-delete-user').setLabel(t(locale,'queue.buttons.delete_user')).setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('edit-queue').setLabel(t(locale,'queue.buttons.edit')).setStyle(ButtonStyle.Secondary)
         );
         // Row with single “Create Queue” button
         const createRow = new ActionRowBuilder().addComponents(
@@ -228,7 +231,7 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
         const fallback = selectedId;
 
         const pinnedAfter = await staffChannel.messages.fetchPinned();
-        let finalMsg = pinnedAfter.find(m => m.embeds[0]?.title === 'Queue Management for Staff');
+        let finalMsg = pinnedAfter.find(m => m.embeds[0]?.title === t(locale, 'queue.staff.title'));
         const components = [selectorRow, controlRow, createRow];
         if (includeBlacklist) components.push(blacklistRow);
         if (finalMsg) {

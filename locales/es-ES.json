@@ -1,0 +1,34 @@
+{
+  "docs": {
+    "staff": "**¡Bienvenido al canal de documentación del personal!**\n\nComo miembro del personal, esto es lo que puedes hacer con Jeffrey:\n\n**1️⃣ /createevent** – Crea nuevos eventos.\n**2️⃣ Colas del personal** – Usa los controles en #staff-queues para gestionar las colas de estudiantes.\n\n¡Actualiza esta lista cuando sea necesario! Si necesitas ayuda, contacta con el administrador del servidor.",
+    "student": "**¡Bienvenido al canal de documentación de estudiantes!**\n\nEsto es lo que puedes hacer con Jeffrey:\n\n## Acciones de cola\n**1️⃣ /viewevents** – Ver próximos eventos.\n**2️⃣ Unirse/Salir** – Usa el menú/botones en #student-queues para unirte o salir de las colas.\n\n## Consejos\nPuedes enviar un DM a Jeffrey con preguntas de historial en lenguaje natural (por ejemplo, ‘¿quién preguntó sobre arrays?’, ‘¿qué se habló el viernes pasado?’) si Premium está activado.\n\n¡Pregunta si necesitas ayuda!"
+  },
+  "queue": {
+    "student": {
+      "title": "Opciones de cola para estudiantes",
+      "descPrefix": "Usa el menú para elegir una cola y luego pulsa **Unirse** o **Salir**.\n\n",
+      "noQueues": "No hay colas todavía.",
+      "buttons": { "join": "Unirse", "leave": "Salir" }
+    },
+    "staff": {
+      "title": "Gestión de colas para el personal",
+      "buffer": "Actualizando la vista... :arrows_counterclockwise:"
+    },
+    "buttons": {
+      "shuffle": "Barajar cola",
+      "clear": "Vaciar cola",
+      "blacklist": "Lista negra",
+      "delete_user": "Eliminar usuario",
+      "edit": "Editar cola",
+      "create": "Crear cola"
+    }
+  },
+  "language": {
+    "set_ok_user": "✅ Tu idioma ahora es {locale}",
+    "set_ok_guild": "✅ El idioma del servidor ahora es {locale}",
+    "need_manage_guild": "⛔ Necesitas Permiso de gestionar el servidor para cambiar el idioma del servidor.",
+    "choose_locale": "Elige un idioma",
+    "scope": { "me": "Yo", "server": "Servidor" }
+  }
+}
+

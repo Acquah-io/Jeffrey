@@ -43,7 +43,20 @@ async function ensureSchema(client) {
       PRIMARY KEY (server_id, queue_id, user_id)
     );
   `);
+
+  // language preferences
+  await client.query(SQL`
+    CREATE TABLE IF NOT EXISTS guild_settings (
+      guild_id TEXT PRIMARY KEY,
+      locale   TEXT NOT NULL
+    );
+  `);
+  await client.query(SQL`
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT PRIMARY KEY,
+      locale  TEXT NOT NULL
+    );
+  `);
 }
 
 module.exports = { ensureSchema };
-
