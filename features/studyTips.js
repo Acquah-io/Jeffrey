@@ -149,6 +149,49 @@ async function ensureSettingsPanel(interaction, settings) {
   return ch;
 }
 
+// Ensure a staff-only #study-tip-settings channel exists with a pinned panel.
+// Can be called without a command context (e.g., from /setup).
+async function ensureSettingsForGuild(guild) {
+  await ensureTable();
+  const gid = guild.id;
+  let st = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0];
+  if (!st) {
+    await upsertSettings(gid, {});
+    st = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0];
+  }
+  let ch = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.name === 'study-tip-settings');
+  if (!ch) {
+    const staffRole = guild.roles.cache.find(r => r.name === 'Staff');
+    ch = await guild.channels.create({
+      name: 'study-tip-settings',
+      type: ChannelType.GuildText,
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: guild.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+        ...(staffRole ? [{ id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : [])
+      ]
+    });
+  }
+  await upsertSettings(gid, { settings_channel_id: ch.id });
+
+  // If no pinned config by the bot, post one
+  const pins = await ch.messages.fetchPinned().catch(() => null);
+  const hasPanel = pins && pins.find(m => m.author?.id === guild.client.user.id && /Study Tip Settings/i.test(m.content));
+  if (!hasPanel) {
+    const tz = st.timezone || 'UTC';
+    const time = st.time_of_day || '12:00';
+    const freq = st.frequency_days || 7;
+    const next = st.next_send_at ? `<t:${Math.floor(new Date(st.next_send_at).getTime()/1000)}:F>` : 'TBA';
+    const msg =
+      `Study Tip Settings\n\n` +
+      `Status: ${st.enabled ? 'Enabled' : 'Disabled'}\n` +
+      `Next send (server time): ${next}\n\n` +
+      `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.`;
+    const sent = await ch.send({ content: msg, components: [panelComponents(!!st.enabled)] });
+    try { await sent.pin(); } catch (_) {}
+  }
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('study_tips')
@@ -241,6 +284,7 @@ module.exports = {
   // Export helpers the bot loop can use
   _helpers: {
     ensureTable,
+    ensureSettingsForGuild,
     computeNextUTC,
     parseHHMM,
     nextFrequency,

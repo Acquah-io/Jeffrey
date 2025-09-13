@@ -158,6 +158,8 @@ async function refreshChannels(guild) {
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
     await setupDocumentationChannels(guild);
+    // Also ensure the Study Tips settings channel/panel exists
+    try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('Failed to ensure study-tip-settings:', e.message); }
 }
 
 // Post-install permission health check with a re‑invite button
@@ -1012,6 +1014,7 @@ client.on('interactionCreate', async (interaction) => {
                   await setupDocumentationChannels(guild);
                   await ensureStudentQueueChannel(guild);
                   await ensureStaffQueueChannel(guild);
+                  try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('Failed to ensure study-tip-settings during setup:', e.message); }
                   await checkGuildPermissions(guild);
                   await interaction.editReply('✅ Setup complete.');
                 } catch (e) {
