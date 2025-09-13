@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -30,6 +30,8 @@ const BACKFILL_ON_START = (process.env.BACKFILL_ON_START || 'false').toLowerCase
 
 const ensureRolesForGuild = require('./ensureRoles.js');
 const assignRolesToMember = require('./assignRoles.js');
+const { getChannelByKey, ensureChannelName } = require('./channels');
+const { getChannelByKey, ensureChannelName } = require('./channels');
 const handleCodeReview = require('./features/codeReview');
 const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
@@ -110,7 +112,7 @@ clientDB.query('SELECT NOW()')
     .catch(err => console.error('Database connection error:', err));
 
 // Documentation channel messages
-const { t, getGuildLocale } = require('./i18n');
+const { t, getGuildLocale, channelName } = require('./i18n');
 async function staffMessageFor(guild) {
   const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
   return t(locale, 'docs.staff');
@@ -156,31 +158,72 @@ async function refreshChannels(guild) {
     await setupDocumentationChannels(guild);
 }
 
+// Post-install permission health check with a re‑invite button
+async function checkGuildPermissions(guild) {
+  try {
+    const me = guild.members.me;
+    if (!me) return;
+    if (me.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+    const needed = new PermissionsBitField([
+      PermissionsBitField.Flags.ViewChannel,
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.ReadMessageHistory,
+      PermissionsBitField.Flags.EmbedLinks,
+      PermissionsBitField.Flags.AttachFiles,
+      PermissionsBitField.Flags.AddReactions,
+      PermissionsBitField.Flags.ManageMessages,
+      PermissionsBitField.Flags.ManageChannels,
+      PermissionsBitField.Flags.ManageRoles,
+      PermissionsBitField.Flags.CreatePublicThreads,
+      PermissionsBitField.Flags.CreatePrivateThreads,
+    ]);
+    const missing = [];
+    for (const [name, flag] of Object.entries(PermissionsBitField.Flags)) {
+      if (!needed.has(flag)) continue;
+      if (!me.permissions.has(flag)) missing.push(name);
+    }
+    if (!missing.length) return;
+    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=${needed.bitfield}&scope=bot%20applications.commands`;
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Fix Permissions').setURL(inviteUrl),
+      new ButtonBuilder().setStyle(ButtonStyle.Primary).setCustomId('run-setup-again').setLabel('Run setup again')
+    );
+    const content = `I’m missing some permissions and may not work correctly.\nMissing: ${missing.join(', ')}\nUse “Fix Permissions” to grant access, then click “Run setup again”.`;
+    let target = guild.systemChannel;
+    if (!target) {
+      target = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(me).has(PermissionsBitField.Flags.SendMessages));
+    }
+    if (target) await target.send({ content, components: [row] }).catch(() => {});
+  } catch (err) {
+    console.error('Permission health‑check failed:', err);
+  }
+}
+
 /**
  * Sets up the documentation channels (staff-docs and student-docs) under a "Jeffrey Documentation" category.
  */
 async function setupDocumentationChannels(guild) {
     try {
         console.log(`Setting up documentation channels for ${guild.name}...`);
-        const channels = guild.channels.cache;
-        let category = channels.find(ch => ch.type === ChannelType.GuildCategory && ch.name === 'Jeffrey Documentation');
+        const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
+        let category = getChannelByKey(guild, 'category_docs', ChannelType.GuildCategory);
 
         // Create the category if it doesn’t exist
         if (!category) {
             console.log('Creating "Jeffrey Documentation" category...');
             category = await guild.channels.create({
-                name: 'Jeffrey Documentation',
+                name: channelName(locale, 'category_docs'),
                 type: ChannelType.GuildCategory,
             });
-        }
+        } else { await ensureChannelName(guild, category, 'category_docs'); }
 
         // Create the staff-docs channel if it doesn’t exist
-        let staffChannel = channels.find(ch => ch.name === 'staff-docs' && ch.parentId === category.id);
+        let staffChannel = getChannelByKey(guild, 'channel_staff_docs', ChannelType.GuildText);
         if (!staffChannel) {
             console.log('Creating staff-docs channel...');
             const staffRole = guild.roles.cache.find(role => role.name === 'Staff');
             staffChannel = await guild.channels.create({
-                name: 'staff-docs',
+                name: channelName(locale, 'channel_staff_docs'),
                 type: ChannelType.GuildText,
                 parent: category.id,
                 permissionOverwrites: [
@@ -189,16 +232,29 @@ async function setupDocumentationChannels(guild) {
                     ...(staffRole ? [{ id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : []),
                 ],
             });
-        }
+        } else { await ensureChannelName(guild, staffChannel, 'channel_staff_docs'); }
+
+        // Ensure bot overwrite exists for staff-docs
+        try {
+          const botId = client.user.id;
+          if (!staffChannel.permissionOverwrites.cache.has(botId)) {
+            await staffChannel.permissionOverwrites.edit(botId, {
+              ViewChannel: true,
+              SendMessages: true,
+              ManageMessages: true,
+              ManageChannels: true,
+            });
+          }
+        } catch (_) {}
 
         // Create the student-docs channel if it doesn’t exist
-        let studentChannel = channels.find(ch => ch.name === 'student-docs' && ch.parentId === category.id);
+        let studentChannel = getChannelByKey(guild, 'channel_student_docs', ChannelType.GuildText);
         if (!studentChannel) {
             console.log('Creating student-docs channel...');
             const studentRole = guild.roles.cache.find(role => role.name === 'Students');
             const staffRole = guild.roles.cache.find(role => role.name === 'Staff');
             studentChannel = await guild.channels.create({
-                name: 'student-docs',
+                name: channelName(locale, 'channel_student_docs'),
                 type: ChannelType.GuildText,
                 parent: category.id,
                 permissionOverwrites: [
@@ -208,11 +264,24 @@ async function setupDocumentationChannels(guild) {
                     ...(staffRole   ? [{ id: staffRole.id,   allow: [PermissionFlagsBits.ViewChannel] }] : []),
                 ],
             });
-        }
+        } else { await ensureChannelName(guild, studentChannel, 'channel_student_docs'); }
+
+        // Ensure bot overwrite exists for student-docs
+        try {
+          const botId = client.user.id;
+          if (!studentChannel.permissionOverwrites.cache.has(botId)) {
+            await studentChannel.permissionOverwrites.edit(botId, {
+              ViewChannel: true,
+              SendMessages: true,
+              ManageMessages: true,
+              ManageChannels: true,
+            });
+          }
+        } catch (_) {}
 
         // Post or update documentation messages with pinned behavior
-        await updateDocumentationMessage(guild, 'staff-docs', await staffMessageFor(guild));
-        await updateDocumentationMessage(guild, 'student-docs', await studentMessageFor(guild));
+        await updateDocumentationMessage(guild, 'channel_staff_docs', await staffMessageFor(guild));
+        await updateDocumentationMessage(guild, 'channel_student_docs', await studentMessageFor(guild));
 
         console.log(`Documentation channels setup complete for ${guild.name}.`);
     } catch (error) {
@@ -223,8 +292,8 @@ async function setupDocumentationChannels(guild) {
 /**
  * Clears old messages in a given doc channel and sends updated doc text.
  */
-async function updateDocumentationMessage(guild, channelName, content) {
-    const channel = guild.channels.cache.find(ch => ch.name === channelName && ch.type === ChannelType.GuildText);
+async function updateDocumentationMessage(guild, channelKey, content) {
+    const channel = getChannelByKey(guild, channelKey, ChannelType.GuildText);
     if (!channel) return;
 
     try {
@@ -236,26 +305,26 @@ async function updateDocumentationMessage(guild, channelName, content) {
             // Update the existing pinned message if content differs
             if (existingMessage.content !== content) {
                 await existingMessage.edit(content);
-                console.log(`Updated pinned message in ${channelName} for ${guild.name}.`);
+                console.log(`Updated pinned message in ${channelKey} for ${guild.name}.`);
             } else {
-                console.log(`Pinned message in ${channelName} is already up to date for ${guild.name}.`);
+                console.log(`Pinned message in ${channelKey} is already up to date for ${guild.name}.`);
             }
         } else {
             // Send a new message and pin it if no matching message exists
             const message = await channel.send(content);
             await message.pin();
-            console.log(`Pinned new documentation message in ${channelName} for ${guild.name}.`);
+            console.log(`Pinned new documentation message in ${channelKey} for ${guild.name}.`);
 
             // Unpin old messages (if any)
             for (const msg of pinnedMessages.values()) {
                 if (msg.id !== message.id) {
                     await msg.unpin();
-                    console.log(`Unpinned outdated message in ${channelName} for ${guild.name}.`);
+                    console.log(`Unpinned outdated message in ${channelKey} for ${guild.name}.`);
                 }
             }
         }
     } catch (err) {
-        console.error(`Failed to update messages in ${channelName} for ${guild.name}:`, err);
+        console.error(`Failed to update messages in ${channelKey} for ${guild.name}:`, err);
     }
 }
 
@@ -272,6 +341,15 @@ client.once('ready', async () => {
         console.log('Registering application (/) commands globally...');
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
         console.log('Successfully registered application (/) commands globally.');
+        // Also register per‑guild for instant availability (avoids waiting up to 1h for global propagation)
+        for (const [gid, guild] of client.guilds.cache) {
+          try {
+            await rest.put(Routes.applicationGuildCommands(CLIENT_ID, gid), { body: commands });
+            console.log(`Registered guild commands for ${guild.name} (${gid}).`);
+          } catch (e) {
+            console.warn(`Guild command registration failed for ${gid}:`, e?.status || e?.code || e);
+          }
+        }
         /* ---------- Auto‑generated invite link ---------- */
         // Define the permissions your bot absolutely needs. 
         // Adjust this list if you add/remove features later.
@@ -328,6 +406,7 @@ client.once('ready', async () => {
           await assignRolesToMember(member);
         }
         await refreshChannels(guild);
+        await checkGuildPermissions(guild);
         // Backfill historical messages for this guild (optional)
         if (BACKFILL_ON_START) {
           console.log(`Starting backfill for ${guild.name}...`);
@@ -348,6 +427,15 @@ client.on('guildCreate', async (guild) => {
     await setupDocumentationChannels(guild);
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
+    await checkGuildPermissions(guild);
+    // Register commands for this guild immediately so slash commands are available at once
+    try {
+      const rest = new REST({ version: '10' }).setToken(ACCESS_TOKEN_DISCORD);
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guild.id), { body: commands });
+      console.log(`Registered guild commands for ${guild.name} (${guild.id}).`);
+    } catch (e) {
+      console.warn('Guild command registration failed:', e?.status || e?.code || e);
+    }
 });
 
 /**
@@ -398,7 +486,7 @@ client.on('guildMemberAdd', async (member) => {
     // Now ensure that if the member is a student, the student channels are created/updated
     if (studentRole && member.roles.cache.has(studentRole.id)) {
         await ensureStudentQueueChannel(member.guild);
-        await updateDocumentationMessage(member.guild, 'student-docs', await studentMessageFor(member.guild));
+        await updateDocumentationMessage(member.guild, 'channel_student_docs', await studentMessageFor(member.guild));
     }
 });
 
@@ -408,9 +496,7 @@ client.on('guildMemberAdd', async (member) => {
 async function ensureStudentQueueChannel(guild) {
     try {
         // Check if the 'student-queues' channel exists
-        let studentQueueChannel = guild.channels.cache.find(
-            channel => channel.name === 'student-queues' && channel.type === ChannelType.GuildText
-        );
+        let studentQueueChannel = getChannelByKey(guild, 'channel_student_queues', ChannelType.GuildText);
 
         // Find the Students role and ensure it exists
         let studentRole = guild.roles.cache.find(role => role.name.toLowerCase() === 'students');
@@ -425,8 +511,9 @@ async function ensureStudentQueueChannel(guild) {
         // If the channel doesn't exist, create it with the appropriate permission overwrites
         if (!studentQueueChannel) {
             console.log(`Creating "student-queues" channel in ${guild.name}...`);
+            const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
             studentQueueChannel = await guild.channels.create({
-                name: 'student-queues',
+                name: channelName(locale, 'channel_student_queues'),
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -443,6 +530,7 @@ async function ensureStudentQueueChannel(guild) {
             });
             console.log(`Created "student-queues" channel in ${guild.name} (${studentQueueChannel.id})`);
         } else {
+            await ensureChannelName(guild, studentQueueChannel, 'channel_student_queues');
             // If the channel exists, ensure its permission overwrites include the Students role
             if (studentRole) {
                 const hasStudentOverwrite = studentQueueChannel.permissionOverwrites.cache.has(studentRole.id);
@@ -481,9 +569,7 @@ async function ensureStudentQueueChannel(guild) {
 async function ensureStaffQueueChannel(guild) {
     try {
         // Check if the 'staff-queues' channel exists
-        let staffQueueChannel = guild.channels.cache.find(
-            channel => channel.name === 'staff-queues' && channel.type === ChannelType.GuildText
-        );
+        let staffQueueChannel = getChannelByKey(guild, 'channel_staff_queues', ChannelType.GuildText);
 
         // Find the Staff role
         const staffRole = guild.roles.cache.find(role => role.name === 'Staff');
@@ -491,8 +577,9 @@ async function ensureStaffQueueChannel(guild) {
         // If the channel doesn't exist, create it
         if (!staffQueueChannel) {
             console.log(`Creating "staff-queues" channel in ${guild.name}...`);
+            const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
             staffQueueChannel = await guild.channels.create({
-                name: 'staff-queues',
+                name: channelName(locale, 'channel_staff_queues'),
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -508,7 +595,7 @@ async function ensureStaffQueueChannel(guild) {
                 ],
             });
             console.log(`Created "staff-queues" channel in ${guild.name} (${staffQueueChannel.id})`);
-        }
+        } else { await ensureChannelName(guild, staffQueueChannel, 'channel_staff_queues'); }
 
         // Make sure the bot’s overwrite is present
         const botId = client.user.id;
@@ -792,6 +879,20 @@ async function handleHistorySlash(interaction) {
  * Handle button interactions in the queue channel.
  */
 client.on('interactionCreate', async (interaction) => {
+    // ─── Autocomplete for /language locales ───────────
+    if (interaction.isAutocomplete() && interaction.commandName === 'language') {
+        try {
+            const { SUPPORTED_LOCALES } = require('./features/language');
+            const focused = interaction.options.getFocused()?.toLowerCase?.() || '';
+            const filtered = SUPPORTED_LOCALES.filter(x =>
+              x.name.toLowerCase().includes(focused) || x.value.toLowerCase().includes(focused)
+            ).slice(0, 25);
+            await interaction.respond(filtered.map(x => ({ name: x.name, value: x.value })));
+        } catch (e) {
+            // ignore
+        }
+        return;
+    }
 
     // ─── Slash commands ────────────────────────────────
     if (interaction.isChatInputCommand()) {
@@ -867,6 +968,27 @@ client.on('interactionCreate', async (interaction) => {
         // await interaction.deferReply({ ephemeral: true });
 
         switch (customId) {
+            case 'run-setup-again': {
+                try {
+                  if (!interaction.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) {
+                    await interaction.reply({ content: '⛔ Manage Server is required to run setup.', ephemeral: true });
+                    break;
+                  }
+                  await interaction.deferReply({ ephemeral: true });
+                  await ensureRolesForGuild(guild);
+                  await setupDocumentationChannels(guild);
+                  await ensureStudentQueueChannel(guild);
+                  await ensureStaffQueueChannel(guild);
+                  await checkGuildPermissions(guild);
+                  await interaction.editReply('✅ Setup complete.');
+                } catch (e) {
+                  console.error('Run-setup-again failed:', e);
+                  if (interaction.deferred && !interaction.replied) {
+                    await interaction.editReply('❌ Setup failed. Please check my permissions and try again.');
+                  }
+                }
+                break;
+            }
             /* ---------- Student selectors & buttons ---------- */
             case 'student-queue-selector':
                 await handleStudentQueueSelect(interaction);
@@ -994,7 +1116,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
       if (member.roles.cache.some(role => role.name.toLowerCase() === 'students')) {
         // Re-create or ensure the student-queues channel and student-docs channel
         await ensureStudentQueueChannel(newPresence.guild);
-        await updateDocumentationMessage(newPresence.guild, 'student-docs', await studentMessageFor(newPresence.guild));
+        await updateDocumentationMessage(newPresence.guild, 'channel_student_docs', await studentMessageFor(newPresence.guild));
       }
     }
   } catch (err) {

@@ -6,6 +6,10 @@ const clientDB = require('./database');
 const locales = {
   'en-US': require('./locales/en-US.json'),
   'es-ES': require('./locales/es-ES.json'),
+  // Additional locales (fallback to en-US unless overridden by a JSON file):
+  'en-GB': {}, 'bg': {}, 'zh-CN': {}, 'zh-TW': {}, 'hr': {}, 'cs': {}, 'da': {}, 'nl': {}, 'fi': {},
+  'fr': {}, 'de': {}, 'el': {}, 'hi': {}, 'hu': {}, 'id': {}, 'it': {}, 'ja': {}, 'ko': {}, 'lt': {}, 'no': {},
+  'pl': {}, 'pt-BR': {}, 'ro': {}, 'ru': {}, 'es-419': {}, 'sv-SE': {}, 'th': {}, 'tr': {}, 'uk': {}, 'vi': {}
 };
 
 const DEFAULT_LOCALE = 'en-US';
@@ -22,6 +26,10 @@ function t(locale, key, vars) {
   const dict = locales[locale] || locales[DEFAULT_LOCALE] || {};
   const base = get(dict, key) ?? get(locales[DEFAULT_LOCALE] || {}, key) ?? key;
   return typeof base === 'string' ? format(base, vars) : base;
+}
+
+function channelName(locale, key) {
+  return t(locale, `channels.${key}`);
 }
 
 async function getGuildLocale(guildId, fallback) {
@@ -48,5 +56,6 @@ async function preferredLocale({ userId = null, guildId = null, discordLocale = 
   return discordLocale || DEFAULT_LOCALE;
 }
 
-module.exports = { t, getGuildLocale, getUserLocale, preferredLocale, DEFAULT_LOCALE };
+function allLocaleCodes() { return Object.keys(locales); }
 
+module.exports = { t, channelName, getGuildLocale, getUserLocale, preferredLocale, DEFAULT_LOCALE, allLocaleCodes };

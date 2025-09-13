@@ -1,10 +1,12 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { makeLoc } = require('../localization');
 const clientDB = require('../database');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('viewevents')
-        .setDescription('See upcoming events organized by staff'),
+        .setDescription('See upcoming events organized by staff')
+        .setDescriptionLocalizations(makeLoc('See upcoming events organized by staff')),
     async execute(interaction) {
         // Must be used in a guild to scope events
         const guildId = interaction.guildId;

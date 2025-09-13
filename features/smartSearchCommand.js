@@ -5,11 +5,13 @@
 // UK English used throughout.
 
 const { SlashCommandBuilder } = require('discord.js');
+const { makeLoc } = require('../localization');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('smart_search')
     .setDescription('Search past Discord chat history with smart queries')
+    .setDescriptionLocalizations(makeLoc('Search past Discord chat history with smart queries'))
     .setDMPermission(true)                      // Command enabled in DMs
 
     /* ---------- sub-commands ---------- */

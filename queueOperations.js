@@ -56,12 +56,10 @@ async function refreshPanels(guild) {
   // DEBUG: comment out if the logs get too noisy.
   console.log(`[refreshPanels] Updating panels for ${guild.name} (${guild.id})`);
 
-  const studentChannel = guild.channels.cache.find(
-    ch => ch.name === 'student-queues'
-  );
-  const staffChannel = guild.channels.cache.find(
-    ch => ch.name === 'staff-queues'
-  );
+  const { getChannelByKey } = require('./channels');
+  const { ChannelType } = require('discord.js');
+  const studentChannel = getChannelByKey(guild, 'channel_student_queues', ChannelType.GuildText);
+  const staffChannel = getChannelByKey(guild, 'channel_staff_queues', ChannelType.GuildText);
 
   await Promise.all([
     studentChannel ? setupStudentQueueChannel(studentChannel) : Promise.resolve(),
@@ -238,7 +236,8 @@ async function handleCreateQueueModal(interaction) {
     const { setupStaffQueueChannel, setupStudentQueueChannel } = require('./queueManager');
     await setupStaffQueueChannel(interaction.channel);
     // Refresh the student panel so the new queue appears
-    const studentChannel = interaction.guild.channels.cache.find(ch => ch.name === 'student-queues');
+    const { getChannelByKey: getCh1 } = require('./channels');
+    const studentChannel = getCh1(interaction.guild, 'channel_student_queues');
     if (studentChannel) {
       await setupStudentQueueChannel(studentChannel);
     }
@@ -343,7 +342,8 @@ async function handleBlacklistSelect(interaction) {
   await setupStaffQueueChannel(interaction.channel);
 
   // Refresh the student panel so black-listed queues vanish before we respond
-  const studentChannel = interaction.guild.channels.cache.find(ch => ch.name === 'student-queues');
+  const { getChannelByKey: getCh2 } = require('./channels');
+  const studentChannel = getCh2(interaction.guild, 'channel_student_queues');
   if (studentChannel) {
     await setupStudentQueueChannel(studentChannel);
   }
@@ -392,13 +392,15 @@ async function handleLeaveQueue(interaction, user, guild) {
     studentActiveQueue.delete(userKey);
 
     // Refresh the student panel to reflect removal
-    const studentChannel = guild.channels.cache.find(ch => ch.name === 'student-queues');
+    const { getChannelByKey: getCh3 } = require('./channels');
+    const studentChannel = getCh3(guild, 'channel_student_queues');
     if (studentChannel) {
       await setupStudentQueueChannel(studentChannel);
     }
 
     // Also refresh the staff panel so it no longer shows the user
-    const staffChannel = guild.channels.cache.find(ch => ch.name === 'staff-queues');
+    const { getChannelByKey: getCh4 } = require('./channels');
+    const staffChannel = getCh4(guild, 'channel_staff_queues');
     if (staffChannel) {
       await setupStaffQueueChannel(staffChannel);
     }
@@ -520,7 +522,8 @@ async function handleClearQueue(interaction) {
   const { setupStaffQueueChannel, setupStudentQueueChannel } = require('./queueManager');
   await setupStaffQueueChannel(interaction.channel);
   // Refresh student panel
-  const studentChannel = interaction.guild.channels.cache.find(ch => ch.name === 'student-queues');
+  const { getChannelByKey: getCh5 } = require('./channels');
+  const studentChannel = getCh5(interaction.guild, 'channel_student_queues');
   if (studentChannel) {
     await setupStudentQueueChannel(studentChannel);
   }
@@ -579,7 +582,8 @@ async function handleShuffleQueue(interaction) {
 async function updateQueueDisplay(guild) {
     try {
         // Locate the student queue channel by its name.
-        const studentChannel = guild.channels.cache.find(channel => channel.name === 'student-queues');
+        const { getChannelByKey: getCh6 } = require('./channels');
+        const studentChannel = getCh6(guild, 'channel_student_queues');
         if (!studentChannel) {
             throw new Error('Student queue channel not found.');
         }
@@ -707,7 +711,8 @@ async function handleEditQueueModal(interaction) {
       // Refresh both the staff and student panels
       const { setupStaffQueueChannel, setupStudentQueueChannel } = require('./queueManager');
       await setupStaffQueueChannel(interaction.channel);
-      const studentChan = interaction.guild.channels.cache.find(ch => ch.name === 'student-queues');
+      const { getChannelByKey: getCh7 } = require('./channels');
+      const studentChan = getCh7(interaction.guild, 'channel_student_queues');
       if (studentChan) await setupStudentQueueChannel(studentChan);
     } catch (error) {
       console.error("Error editing queue:", error);

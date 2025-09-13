@@ -1,11 +1,13 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { makeLoc } = require('../localization');
 const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const clientDB = require('../database');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('createevent')
-        .setDescription('Open the event creation modal'),
+        .setDescription('Open the event creation modal')
+        .setDescriptionLocalizations(makeLoc('Open the event creation modal')),
     async execute(interaction) {
         // Check if the user has the "Staff" role
         const staffRole = interaction.guild.roles.cache.find(role => role.name === 'Staff');

@@ -1,7 +1,7 @@
 {
   "docs": {
-    "staff": "**¡Bienvenido al canal de documentación del personal!**\n\nComo miembro del personal, esto es lo que puedes hacer con Jeffrey:\n\n**1️⃣ /createevent** – Crea nuevos eventos.\n**2️⃣ Colas del personal** – Usa los controles en #staff-queues para gestionar las colas de estudiantes.\n\n¡Actualiza esta lista cuando sea necesario! Si necesitas ayuda, contacta con el administrador del servidor.",
-    "student": "**¡Bienvenido al canal de documentación de estudiantes!**\n\nEsto es lo que puedes hacer con Jeffrey:\n\n## Acciones de cola\n**1️⃣ /viewevents** – Ver próximos eventos.\n**2️⃣ Unirse/Salir** – Usa el menú/botones en #student-queues para unirte o salir de las colas.\n\n## Consejos\nPuedes enviar un DM a Jeffrey con preguntas de historial en lenguaje natural (por ejemplo, ‘¿quién preguntó sobre arrays?’, ‘¿qué se habló el viernes pasado?’) si Premium está activado.\n\n¡Pregunta si necesitas ayuda!"
+    "staff": "**Guía de Jeffrey para el personal**\n\n**Configuración y administración**\n• /setup – Ejecuta de nuevo la configuración (canales y paneles).\n• /language scope: Server – Cambia el idioma del servidor para el contenido compartido.\n• Permisos: el bot necesita Gestionar canales/roles, Gestionar mensajes, e hilos.\n\n**Colas (GRATIS)**\n• Panel de personal: #staff-queues → seleccionar cola, Barajar/Vaciar, Lista negra, Editar.\n• Panel de estudiantes: #student-queues → los alumnos pueden Unirse/Salir.\n\n**Eventos (GRATIS)**\n• /createevent para crear eventos; /viewevents para verlos.\n\n**Funciones de IA (PREMIUM 🔒)**\n• Revisión de código: responde a bloques de código con Sí/No para obtener revisión.\n• Asistente de preguntas: escribe una pregunta con ‘?’ y elige Sí/No para ayuda privada o hilo.\n• Búsqueda de historial por DM.\n\n**Normas**\n• No compartas datos sensibles. Sé respetuoso y usa los hilos y canales correctos.",
+    "student": "**Bienvenido – Sobre Jeffrey**\n\n**Qué puedes hacer**\n• Colas (GRATIS): abre #student-queues → elige una cola y **Unirse/Salir**.\n• Eventos (GRATIS): /viewevents para ver eventos.\n• Ayuda con IA (PREMIUM 🔒): revisión de código, preguntas y búsqueda de historial por DM.\n\n**Idioma**\n• /language scope: Me – Cambia el idioma de las respuestas que recibes.\n• El idioma del servidor controla paneles y documentación."
   },
   "queue": {
     "student": {
@@ -30,5 +30,12 @@
     "choose_locale": "Elige un idioma",
     "scope": { "me": "Yo", "server": "Servidor" }
   }
+  ,
+  "channels": {
+    "category_docs": "Documentación de Jeffrey",
+    "channel_staff_docs": "docs-de-personal",
+    "channel_student_docs": "docs-de-estudiantes",
+    "channel_student_queues": "colas-de-estudiantes",
+    "channel_staff_queues": "colas-del-personal"
+  }
 }
-

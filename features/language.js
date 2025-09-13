@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { makeLoc, ALL_LOCALES } = require('../localization');
 const clientDB = require('../database');
 const { PermissionFlagsBits } = require('discord.js');
 const { t, preferredLocale, getGuildLocale } = require('../i18n');
@@ -6,7 +7,37 @@ const queueManager = require('../queueManager');
 
 const SUPPORTED = [
   { name: 'English (US)', value: 'en-US' },
-  { name: 'Español (ES)', value: 'es-ES' }
+  { name: 'English (GB)', value: 'en-GB' },
+  { name: 'Bulgarian', value: 'bg' },
+  { name: 'Chinese (Simplified)', value: 'zh-CN' },
+  { name: 'Chinese (Traditional)', value: 'zh-TW' },
+  { name: 'Croatian', value: 'hr' },
+  { name: 'Czech', value: 'cs' },
+  { name: 'Danish', value: 'da' },
+  { name: 'Dutch', value: 'nl' },
+  { name: 'Finnish', value: 'fi' },
+  { name: 'French', value: 'fr' },
+  { name: 'German', value: 'de' },
+  { name: 'Greek', value: 'el' },
+  { name: 'Hindi', value: 'hi' },
+  { name: 'Hungarian', value: 'hu' },
+  { name: 'Indonesian', value: 'id' },
+  { name: 'Italian', value: 'it' },
+  { name: 'Japanese', value: 'ja' },
+  { name: 'Korean', value: 'ko' },
+  { name: 'Lithuanian', value: 'lt' },
+  { name: 'Norwegian', value: 'no' },
+  { name: 'Polish', value: 'pl' },
+  { name: 'Portuguese (Brazil)', value: 'pt-BR' },
+  { name: 'Romanian', value: 'ro' },
+  { name: 'Russian', value: 'ru' },
+  { name: 'Spanish (Spain)', value: 'es-ES' },
+  { name: 'Spanish (LATAM)', value: 'es-419' },
+  { name: 'Swedish', value: 'sv-SE' },
+  { name: 'Thai', value: 'th' },
+  { name: 'Turkish', value: 'tr' },
+  { name: 'Ukrainian', value: 'uk' },
+  { name: 'Vietnamese', value: 'vi' }
   // Add more here (and in locales/)
 ];
 
@@ -14,6 +45,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('language')
     .setDescription('Set your or the server language')
+    .setDescriptionLocalizations(makeLoc('Set your or the server language'))
     .addStringOption(o =>
       o.setName('scope')
        .setDescription('Apply to yourself or the server')
@@ -26,7 +58,33 @@ module.exports = {
       o.setName('locale')
        .setDescription('Choose a language')
        .setRequired(true)
-       .addChoices(...SUPPORTED)
+       .addChoices(
+         { name: 'English (US)', value: 'en-US' },
+         { name: 'English (GB)', value: 'en-GB' },
+         { name: 'Español (España)', value: 'es-ES' },
+         { name: 'Español (LATAM)', value: 'es-419' },
+         { name: 'Français', value: 'fr' },
+         { name: 'Deutsch', value: 'de' },
+         { name: 'Português (Brasil)', value: 'pt-BR' },
+         { name: 'Italiano', value: 'it' },
+         { name: '日本語', value: 'ja' },
+         { name: '한국어', value: 'ko' },
+         { name: '中文（简体）', value: 'zh-CN' },
+         { name: '中文（繁體）', value: 'zh-TW' },
+         { name: 'Русский', value: 'ru' },
+         { name: 'Polski', value: 'pl' },
+         { name: 'Türkçe', value: 'tr' },
+         { name: 'Nederlands', value: 'nl' },
+         { name: 'Svenska', value: 'sv-SE' },
+         { name: 'Norsk', value: 'no' },
+         { name: 'Dansk', value: 'da' },
+         { name: 'Suomi', value: 'fi' },
+         { name: 'Bahasa Indonesia', value: 'id' },
+         { name: 'ไทย', value: 'th' },
+         { name: 'Tiếng Việt', value: 'vi' },
+         { name: 'Română', value: 'ro' },
+         { name: 'Українська', value: 'uk' }
+       )
     ),
 
   async execute(interaction) {
@@ -93,3 +151,5 @@ module.exports = {
   }
 };
 
+// Export supported locales for autocomplete
+module.exports.SUPPORTED_LOCALES = SUPPORTED;

@@ -47,6 +47,8 @@ module.exports = async function handleGeneralQuestion(message) {
       if (interaction.user.id !== message.author.id) {
         return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
       }
+      // Acknowledge immediately to avoid 3s timeout regardless of entitlement latency
+      await interaction.deferUpdate().catch(() => {});
       if (interaction.customId === "yes_private_help") {
         // Premium check for user
         const ok = await premium.hasUserEntitlement(interaction.user.id);
@@ -55,8 +57,6 @@ module.exports = async function handleGeneralQuestion(message) {
           await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
           return;
         }
-        // Acknowledge the button immediately to avoid timing out
-        await interaction.deferUpdate();
         try {
           // Generate the private help message
           const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
@@ -78,9 +78,6 @@ module.exports = async function handleGeneralQuestion(message) {
           });
         }
       } else if (interaction.customId === "no_private_help") {
-        // Acknowledge the button press straight away
-        await interaction.deferUpdate();
-
         // Premium check for user
         const ok = await premium.hasUserEntitlement(interaction.user.id);
         if (!ok) {
