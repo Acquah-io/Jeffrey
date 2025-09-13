@@ -81,6 +81,15 @@ function computeNextUTC({ from = new Date(), hour = 12, minute = 0, timeZone = '
 async function upsertSettings(guildId, patch) {
   const cols = Object.keys(patch);
   const vals = Object.values(patch);
+  if (cols.length === 0) {
+    // Insert defaults row if none exists
+    await clientDB.query(
+      `INSERT INTO study_tips (guild_id) VALUES ($1)
+         ON CONFLICT (guild_id) DO NOTHING`,
+      [guildId]
+    );
+    return;
+  }
   const setSql = cols.map((c, i) => `${c}=$${i + 2}`).join(', ');
   await clientDB.query(
     `INSERT INTO study_tips (guild_id, ${cols.join(', ')})

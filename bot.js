@@ -303,19 +303,40 @@ async function updateDocumentationMessage(guild, channelKey, content) {
     try {
         // Fetch pinned messages in the channel
         const pinnedMessages = await channel.messages.fetchPinned();
-        const existingMessage = pinnedMessages.find(msg => msg.content === content);
+        // If content exceeds Discord's 2000‑char limit, split into chunks and pin the first
+        const MAX = 1900;
+        const needsSplit = content.length > MAX;
+        const chunks = needsSplit
+          ? (() => {
+              const paras = content.split(/\n\n/);
+              const out = [];
+              let cur = '';
+              for (const p of paras) {
+                if ((cur + (cur ? '\n\n' : '') + p).length > MAX) {
+                  if (cur) out.push(cur);
+                  cur = p;
+                } else {
+                  cur = cur ? cur + '\n\n' + p : p;
+                }
+              }
+              if (cur) out.push(cur);
+              return out;
+            })()
+          : [content];
+        const firstChunk = chunks[0];
+        const existingMessage = pinnedMessages.find(msg => msg.content === firstChunk);
 
         if (existingMessage) {
-            // Update the existing pinned message if content differs
-            if (existingMessage.content !== content) {
-                await existingMessage.edit(content);
+            // Update the existing pinned message if content differs (first chunk only)
+            if (existingMessage.content !== firstChunk) {
+                await existingMessage.edit(firstChunk);
                 console.log(`Updated pinned message in ${channelKey} for ${guild.name}.`);
             } else {
                 console.log(`Pinned message in ${channelKey} is already up to date for ${guild.name}.`);
             }
         } else {
             // Send a new message and pin it if no matching message exists
-            const message = await channel.send(content);
+            const message = await channel.send(firstChunk);
             await message.pin();
             console.log(`Pinned new documentation message in ${channelKey} for ${guild.name}.`);
 
@@ -325,6 +346,12 @@ async function updateDocumentationMessage(guild, channelKey, content) {
                     await msg.unpin();
                     console.log(`Unpinned outdated message in ${channelKey} for ${guild.name}.`);
                 }
+            }
+            // Send any remaining chunks as normal messages under the panel
+            if (chunks.length > 1) {
+              for (let i = 1; i < chunks.length; i++) {
+                await channel.send(chunks[i]);
+              }
             }
         }
     } catch (err) {
