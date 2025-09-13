@@ -7,13 +7,14 @@ const { REST, Routes } = require('discord.js');
     const rest = new REST({ version: '10' })
       .setToken(process.env.ACCESS_TOKEN_DISCORD);
 
-    // ⚠️  This removes every existing slash-command for this bot in the guild
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-      { body: [] }
-    );
-
-    console.log('✅ Cleared guild commands');
+    const { CLIENT_ID, GUILD_ID } = process.env;
+    if (GUILD_ID) {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
+      console.log(`✅ Cleared guild commands for guild ${GUILD_ID}`);
+    } else {
+      await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+      console.log('✅ Cleared global commands');
+    }
   } catch (err) {
     console.error('Purge failed:', err);
   }

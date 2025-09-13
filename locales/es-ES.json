@@ -1,7 +1,7 @@
 {
   "docs": {
-    "staff": "**Guía de Jeffrey para el personal**\n\n**Configuración y administración**\n• /setup – Ejecuta de nuevo la configuración (canales y paneles).\n• /language scope: Server – Cambia el idioma del servidor para el contenido compartido.\n• Permisos: el bot necesita Gestionar canales/roles, Gestionar mensajes, e hilos.\n\n**Colas (GRATIS)**\n• Panel de personal: #staff-queues → seleccionar cola, Barajar/Vaciar, Lista negra, Editar.\n• Panel de estudiantes: #student-queues → los alumnos pueden Unirse/Salir.\n\n**Eventos (GRATIS)**\n• /createevent para crear eventos; /viewevents para verlos.\n\n**Funciones de IA (PREMIUM 🔒)**\n• Revisión de código: responde a bloques de código con Sí/No para obtener revisión.\n• Asistente de preguntas: escribe una pregunta con ‘?’ y elige Sí/No para ayuda privada o hilo.\n• Búsqueda de historial por DM.\n\n**Normas**\n• No compartas datos sensibles. Sé respetuoso y usa los hilos y canales correctos.",
-    "student": "**Bienvenido – Sobre Jeffrey**\n\n**Qué puedes hacer**\n• Colas (GRATIS): abre #student-queues → elige una cola y **Unirse/Salir**.\n• Eventos (GRATIS): /viewevents para ver eventos.\n• Ayuda con IA (PREMIUM 🔒): revisión de código, preguntas y búsqueda de historial por DM.\n\n**Idioma**\n• /language scope: Me – Cambia el idioma de las respuestas que recibes.\n• El idioma del servidor controla paneles y documentación."
+    "staff": "**Guía de Jeffrey para el personal**\n\n**Configuración y administración**\n• /setup – Ejecuta de nuevo la configuración (canales y paneles).\n• Permisos: el bot necesita Gestionar canales/roles, Gestionar mensajes e hilos.\n\n**Colas (GRATIS)**\n• Panel de personal: #staff-queues → seleccionar cola, Barajar/Vaciar, Lista negra, Editar.\n• Panel de estudiantes: #student-queues → los alumnos pueden Unirse/Salir.\n\n**Eventos (GRATIS)**\n• /createevent para crear eventos; /viewevents para verlos.\n\n**Funciones de IA (PREMIUM 🔒)**\n• Revisión de código: responde a bloques de código con Sí/No para obtener revisión.\n• Asistente de preguntas: escribe una pregunta con ‘?’ y elige Sí/No para ayuda privada o hilo.\n• Búsqueda de historial por DM.\n\n**Normas**\n• No compartas datos sensibles. Sé respetuoso y usa los hilos y canales correctos.",
+    "student": "**Bienvenido – Sobre Jeffrey**\n\n**Qué puedes hacer**\n• Colas (GRATIS): abre #student-queues → elige una cola y **Unirse/Salir**.\n• Eventos (GRATIS): /viewevents para ver eventos.\n• Ayuda con IA (PREMIUM 🔒): revisión de código, preguntas y búsqueda de historial por DM."
   },
   "queue": {
     "student": {
@@ -23,14 +23,6 @@
       "create": "Crear cola"
     }
   },
-  "language": {
-    "set_ok_user": "✅ Tu idioma ahora es {locale}",
-    "set_ok_guild": "✅ El idioma del servidor ahora es {locale}",
-    "need_manage_guild": "⛔ Necesitas Permiso de gestionar el servidor para cambiar el idioma del servidor.",
-    "choose_locale": "Elige un idioma",
-    "scope": { "me": "Yo", "server": "Servidor" }
-  }
-  ,
   "channels": {
     "category_docs": "Documentación de Jeffrey",
     "channel_staff_docs": "docs-de-personal",

@@ -26,12 +26,13 @@ const {
 } = require('./queueOperations');
   
 const { ACCESS_TOKEN_DISCORD, CLIENT_ID } = process.env;
+const COMMAND_SCOPE = (process.env.COMMAND_SCOPE || 'guild').toLowerCase(); // 'guild' | 'global' | 'both'
 const BACKFILL_ON_START = (process.env.BACKFILL_ON_START || 'false').toLowerCase() === 'true';
 
 const ensureRolesForGuild = require('./ensureRoles.js');
 const assignRolesToMember = require('./assignRoles.js');
-const { getChannelByKey, ensureChannelName } = require('./channels');
-const { getChannelByKey, ensureChannelName } = require('./channels');
+// Alias channel helpers locally to avoid any potential name collisions in Node 22
+const { getChannelByKey: getChKey, ensureChannelName: ensureChName } = require('./channels');
 const handleCodeReview = require('./features/codeReview');
 const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
@@ -206,7 +207,7 @@ async function setupDocumentationChannels(guild) {
     try {
         console.log(`Setting up documentation channels for ${guild.name}...`);
         const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
-        let category = getChannelByKey(guild, 'category_docs', ChannelType.GuildCategory);
+        let category = getChKey(guild, 'category_docs', ChannelType.GuildCategory);
 
         // Create the category if it doesn’t exist
         if (!category) {
@@ -215,10 +216,10 @@ async function setupDocumentationChannels(guild) {
                 name: channelName(locale, 'category_docs'),
                 type: ChannelType.GuildCategory,
             });
-        } else { await ensureChannelName(guild, category, 'category_docs'); }
+        } else { await ensureChName(guild, category, 'category_docs'); }
 
         // Create the staff-docs channel if it doesn’t exist
-        let staffChannel = getChannelByKey(guild, 'channel_staff_docs', ChannelType.GuildText);
+        let staffChannel = getChKey(guild, 'channel_staff_docs', ChannelType.GuildText);
         if (!staffChannel) {
             console.log('Creating staff-docs channel...');
             const staffRole = guild.roles.cache.find(role => role.name === 'Staff');
@@ -232,7 +233,7 @@ async function setupDocumentationChannels(guild) {
                     ...(staffRole ? [{ id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : []),
                 ],
             });
-        } else { await ensureChannelName(guild, staffChannel, 'channel_staff_docs'); }
+        } else { await ensureChName(guild, staffChannel, 'channel_staff_docs'); }
 
         // Ensure bot overwrite exists for staff-docs
         try {
@@ -248,7 +249,7 @@ async function setupDocumentationChannels(guild) {
         } catch (_) {}
 
         // Create the student-docs channel if it doesn’t exist
-        let studentChannel = getChannelByKey(guild, 'channel_student_docs', ChannelType.GuildText);
+        let studentChannel = getChKey(guild, 'channel_student_docs', ChannelType.GuildText);
         if (!studentChannel) {
             console.log('Creating student-docs channel...');
             const studentRole = guild.roles.cache.find(role => role.name === 'Students');
@@ -264,7 +265,7 @@ async function setupDocumentationChannels(guild) {
                     ...(staffRole   ? [{ id: staffRole.id,   allow: [PermissionFlagsBits.ViewChannel] }] : []),
                 ],
             });
-        } else { await ensureChannelName(guild, studentChannel, 'channel_student_docs'); }
+        } else { await ensureChName(guild, studentChannel, 'channel_student_docs'); }
 
         // Ensure bot overwrite exists for student-docs
         try {
@@ -293,7 +294,7 @@ async function setupDocumentationChannels(guild) {
  * Clears old messages in a given doc channel and sends updated doc text.
  */
 async function updateDocumentationMessage(guild, channelKey, content) {
-    const channel = getChannelByKey(guild, channelKey, ChannelType.GuildText);
+    const channel = getChKey(guild, channelKey, ChannelType.GuildText);
     if (!channel) return;
 
     try {
@@ -338,17 +339,26 @@ client.once('ready', async () => {
     // Register commands globally
     const rest = new REST({ version: '10' }).setToken(ACCESS_TOKEN_DISCORD);
     try {
-        console.log('Registering application (/) commands globally...');
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('Successfully registered application (/) commands globally.');
-        // Also register per‑guild for instant availability (avoids waiting up to 1h for global propagation)
-        for (const [gid, guild] of client.guilds.cache) {
-          try {
-            await rest.put(Routes.applicationGuildCommands(CLIENT_ID, gid), { body: commands });
-            console.log(`Registered guild commands for ${guild.name} (${gid}).`);
-          } catch (e) {
-            console.warn(`Guild command registration failed for ${gid}:`, e?.status || e?.code || e);
+        if (COMMAND_SCOPE === 'global' || COMMAND_SCOPE === 'both') {
+          console.log('Registering application (/) commands globally...');
+          await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+          console.log('Successfully registered application (/) commands globally.');
+        } else {
+          console.log('Skipping global registration (COMMAND_SCOPE!=global/both).');
+        }
+
+        if (COMMAND_SCOPE === 'guild' || COMMAND_SCOPE === 'both') {
+          // Register per‑guild for instant availability
+          for (const [gid, guild] of client.guilds.cache) {
+            try {
+              await rest.put(Routes.applicationGuildCommands(CLIENT_ID, gid), { body: commands });
+              console.log(`Registered guild commands for ${guild.name} (${gid}).`);
+            } catch (e) {
+              console.warn(`Guild command registration failed for ${gid}:`, e?.status || e?.code || e);
+            }
           }
+        } else {
+          console.log('Skipping per‑guild registration (COMMAND_SCOPE=global).');
         }
         /* ---------- Auto‑generated invite link ---------- */
         // Define the permissions your bot absolutely needs. 
@@ -430,9 +440,13 @@ client.on('guildCreate', async (guild) => {
     await checkGuildPermissions(guild);
     // Register commands for this guild immediately so slash commands are available at once
     try {
-      const rest = new REST({ version: '10' }).setToken(ACCESS_TOKEN_DISCORD);
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guild.id), { body: commands });
-      console.log(`Registered guild commands for ${guild.name} (${guild.id}).`);
+      if (COMMAND_SCOPE === 'guild' || COMMAND_SCOPE === 'both') {
+        const rest = new REST({ version: '10' }).setToken(ACCESS_TOKEN_DISCORD);
+        await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guild.id), { body: commands });
+        console.log(`Registered guild commands for ${guild.name} (${guild.id}).`);
+      } else {
+        console.log('COMMAND_SCOPE=global → skipping per‑guild registration on guildCreate');
+      }
     } catch (e) {
       console.warn('Guild command registration failed:', e?.status || e?.code || e);
     }
@@ -496,7 +510,7 @@ client.on('guildMemberAdd', async (member) => {
 async function ensureStudentQueueChannel(guild) {
     try {
         // Check if the 'student-queues' channel exists
-        let studentQueueChannel = getChannelByKey(guild, 'channel_student_queues', ChannelType.GuildText);
+        let studentQueueChannel = getChKey(guild, 'channel_student_queues', ChannelType.GuildText);
 
         // Find the Students role and ensure it exists
         let studentRole = guild.roles.cache.find(role => role.name.toLowerCase() === 'students');
@@ -530,7 +544,7 @@ async function ensureStudentQueueChannel(guild) {
             });
             console.log(`Created "student-queues" channel in ${guild.name} (${studentQueueChannel.id})`);
         } else {
-            await ensureChannelName(guild, studentQueueChannel, 'channel_student_queues');
+            await ensureChName(guild, studentQueueChannel, 'channel_student_queues');
             // If the channel exists, ensure its permission overwrites include the Students role
             if (studentRole) {
                 const hasStudentOverwrite = studentQueueChannel.permissionOverwrites.cache.has(studentRole.id);
@@ -569,7 +583,7 @@ async function ensureStudentQueueChannel(guild) {
 async function ensureStaffQueueChannel(guild) {
     try {
         // Check if the 'staff-queues' channel exists
-        let staffQueueChannel = getChannelByKey(guild, 'channel_staff_queues', ChannelType.GuildText);
+        let staffQueueChannel = getChKey(guild, 'channel_staff_queues', ChannelType.GuildText);
 
         // Find the Staff role
         const staffRole = guild.roles.cache.find(role => role.name === 'Staff');
@@ -595,7 +609,7 @@ async function ensureStaffQueueChannel(guild) {
                 ],
             });
             console.log(`Created "staff-queues" channel in ${guild.name} (${staffQueueChannel.id})`);
-        } else { await ensureChannelName(guild, staffQueueChannel, 'channel_staff_queues'); }
+        } else { await ensureChName(guild, staffQueueChannel, 'channel_staff_queues'); }
 
         // Make sure the bot’s overwrite is present
         const botId = client.user.id;
@@ -879,20 +893,7 @@ async function handleHistorySlash(interaction) {
  * Handle button interactions in the queue channel.
  */
 client.on('interactionCreate', async (interaction) => {
-    // ─── Autocomplete for /language locales ───────────
-    if (interaction.isAutocomplete() && interaction.commandName === 'language') {
-        try {
-            const { SUPPORTED_LOCALES } = require('./features/language');
-            const focused = interaction.options.getFocused()?.toLowerCase?.() || '';
-            const filtered = SUPPORTED_LOCALES.filter(x =>
-              x.name.toLowerCase().includes(focused) || x.value.toLowerCase().includes(focused)
-            ).slice(0, 25);
-            await interaction.respond(filtered.map(x => ({ name: x.name, value: x.value })));
-        } catch (e) {
-            // ignore
-        }
-        return;
-    }
+    // (language autocomplete removed)
 
     // ─── Slash commands ────────────────────────────────
     if (interaction.isChatInputCommand()) {

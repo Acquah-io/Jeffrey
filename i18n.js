@@ -1,6 +1,4 @@
 // i18n.js
-const path = require('path');
-const clientDB = require('./database');
 
 // Load locale dictionaries (extend as needed)
 const locales = {
@@ -33,27 +31,18 @@ function channelName(locale, key) {
 }
 
 async function getGuildLocale(guildId, fallback) {
-  try {
-    const r = await clientDB.query('SELECT locale FROM guild_settings WHERE guild_id=$1', [guildId]);
-    if (r.rows[0]?.locale) return r.rows[0].locale;
-  } catch (_) {}
-  return fallback || DEFAULT_LOCALE;
+  // Force English only
+  return DEFAULT_LOCALE;
 }
 
 async function getUserLocale(userId, fallback) {
-  try {
-    const r = await clientDB.query('SELECT locale FROM user_settings WHERE user_id=$1', [userId]);
-    if (r.rows[0]?.locale) return r.rows[0].locale;
-  } catch (_) {}
-  return fallback || DEFAULT_LOCALE;
+  // Force English only
+  return DEFAULT_LOCALE;
 }
 
-async function preferredLocale({ userId = null, guildId = null, discordLocale = null } = {}) {
-  const fromUser = userId ? await getUserLocale(userId).catch(() => null) : null;
-  if (fromUser) return fromUser;
-  const fromGuild = guildId ? await getGuildLocale(guildId, null).catch(() => null) : null;
-  if (fromGuild) return fromGuild;
-  return discordLocale || DEFAULT_LOCALE;
+async function preferredLocale() {
+  // Force English only
+  return DEFAULT_LOCALE;
 }
 
 function allLocaleCodes() { return Object.keys(locales); }

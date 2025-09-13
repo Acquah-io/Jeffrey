@@ -3,6 +3,10 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// Signal to any required modules (e.g., database.js) that we're only deploying
+// commands and should not establish heavyweight connections.
+process.env.COMMANDS_DEPLOY = process.env.COMMANDS_DEPLOY || '1';
+
 const { ACCESS_TOKEN_DISCORD, CLIENT_ID, GUILD_ID } = process.env;
 
 // If GUILD_ID is provided, register commands to that guild for instant refresh.

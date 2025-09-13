@@ -44,7 +44,6 @@ module.exports = {
         .setDescription('Commands available to staff members')
         .addFields(
           { name: '/setup',       value: 'Re-run setup: roles, docs and queue channels.' },
-          { name: '/language',    value: 'Set the server language (use scope: Server).' },
           { name: '/createevent', value: 'Create a new event for the server.' },
         )
         .setFooter({ text: 'For further assistance, contact the server admin.' });
@@ -59,7 +58,6 @@ module.exports = {
         .setDescription('Commands available to students')
         .addFields(
           { name: '/viewevents',  value: 'View upcoming events on the server.' },
-          { name: '/language',    value: 'Change your personal language (use scope: Me).' },
         )
         .setFooter({ text: 'For further assistance, contact a staff member.' });
 

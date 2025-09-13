@@ -5,7 +5,12 @@
     "main": "bot.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "start": "node bot.js"
+        "start": "node bot.js",
+        "db:drop-unused": "node drop-unused-tables.js",
+        "commands:deploy": "node deploy-commands.js",
+        "commands:purge": "node purge-commands.js",
+        "check:db": "node scripts/db-check.js",
+        "check:openai": "node scripts/openai-check.js"
     },
     "keywords": [],
     "author": "",
