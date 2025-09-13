@@ -1143,9 +1143,6 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true }).catch(() => {});
           return;
         }
-        // Acknowledge quickly to avoid timeouts and token expiry
-        await interaction.deferUpdate().catch(() => {});
-
         const gid = interaction.guildId;
         const row = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0] || {};
         const helpers = studyTips._helpers;
@@ -1178,7 +1175,6 @@ client.on('interactionCreate', async (interaction) => {
               new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hhmm').setLabel('Time (HH:MM 24h)').setStyle(TextInputStyle.Short).setValue(row.time_of_day || '12:00').setRequired(true)),
               new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tz').setLabel('Timezone (IANA, e.g., Europe/London)').setStyle(TextInputStyle.Short).setValue(row.timezone || 'UTC').setRequired(true))
             );
-            await interaction.followUp({ content: 'Open the dialog to set time…', ephemeral: true }).catch(() => {});
             await interaction.showModal(modal);
             return; // handled via modal submit
           }
@@ -1202,7 +1198,8 @@ client.on('interactionCreate', async (interaction) => {
             : interaction.message.components;
           const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
           const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.`;
-          await interaction.message.edit({ content: msg, components });
+          // Use interaction.update so the button is acknowledged as part of the edit
+          await interaction.update({ content: msg, components });
         } catch (_) {}
         await interaction.followUp({ content: '✅ Updated.', ephemeral: true }).catch(() => {});
       } catch (e) {
