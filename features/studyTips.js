@@ -123,9 +123,11 @@ async function ensureSettingsPanel(interaction, settings) {
   let ch = interaction.guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.name === 'study-tip-settings');
   if (!ch) {
     const staffRole = interaction.guild.roles.cache.find(r => r.name === 'Staff');
+    const docsCat = getChannelByKey(interaction.guild, 'category_docs', ChannelType.GuildCategory);
     ch = await interaction.guild.channels.create({
       name: 'study-tip-settings',
       type: ChannelType.GuildText,
+      parent: docsCat?.id,
       permissionOverwrites: [
         { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
         { id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
@@ -162,9 +164,11 @@ async function ensureSettingsForGuild(guild) {
   let ch = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.name === 'study-tip-settings');
   if (!ch) {
     const staffRole = guild.roles.cache.find(r => r.name === 'Staff');
+    const docsCat = getChannelByKey(guild, 'category_docs', ChannelType.GuildCategory);
     ch = await guild.channels.create({
       name: 'study-tip-settings',
       type: ChannelType.GuildText,
+      parent: docsCat?.id,
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
         { id: guild.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
