@@ -117,11 +117,15 @@ clientDB.query('SELECT NOW()')
 const { t, getGuildLocale, channelName } = require('./i18n');
 async function staffMessageFor(guild) {
   const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
-  return t(locale, 'docs.staff');
+  const base = t(locale, 'docs.staff');
+  const extra = `\n\n**AI Tips (Premium 🔒)**\n• Enable unique study tips: /study_tips set_ai mode:on.\n• Disable: /study_tips set_ai mode:off.`;
+  return base + extra;
 }
 async function studentMessageFor(guild) {
   const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
-  return t(locale, 'docs.student');
+  const base = t(locale, 'docs.student');
+  const extra = `\n\n**Study tips**\nYour server may send periodic reminders. When Premium is enabled, these can include a short AI‑generated tip for motivation.`;
+  return base + extra;
 }
 
 // Initialise the bot client
@@ -432,7 +436,27 @@ client.once('ready', async () => {
             let channel = row.target_channel_id ? guild.channels.cache.get(row.target_channel_id) : null;
             if (!channel) channel = require('./channels').getChannelByKey(guild, 'channel_student_docs', ChannelType.GuildText) || guild.systemChannel;
             if (!channel) continue;
-            await channel.send('⏰ Study time! Take 25 minutes to focus on your studies. When you’re done, take a 5‑minute break.');
+            let content = '⏰ Study time! Take 25 minutes to focus on your studies. When you’re done, take a 5‑minute break.';
+            try {
+              if (row.ai_enabled && process.env.OPENAI_API_KEY) {
+                // Guild must be entitled (or whitelisted) to use AI tips
+                const entitled = (await require('./premium').hasGuildEntitlement(guild.id)) || require('./premium').isWhitelistedGuild(guild.id);
+                if (!entitled) throw new Error('premium-required');
+                const { getGuildLocale } = require('./i18n');
+                const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
+                const { getOpenAIResponse } = require('./features/openaiService');
+                const prompt = 'Create a unique, encouraging study tip or motivation for students starting a focused study block. 1–2 short sentences, friendly, no hashtags, no links. Vary topics (focus, breaks, recall, goal setting, mindset).';
+                const tip = await getOpenAIResponse(prompt, 120, locale);
+                content = `⏰ Study time! ${tip}`.slice(0, 1800);
+              }
+            } catch (e) {
+              if (e && e.message === 'premium-required') {
+                console.warn('AI tips skipped (premium required)');
+              } else {
+                console.warn('AI tip generation failed, using default:', e.message);
+              }
+            }
+            await channel.send(content);
 
             const t = studyTips._helpers.parseHHMM(row.time_of_day) || { hour: 12, minute: 0 };
             // Compute next schedule from now using configured TZ and frequency
@@ -1114,68 +1138,76 @@ client.on('interactionCreate', async (interaction) => {
 
     // ─── Study‑tips buttons ───────────────────────────────────────────────
     if (interaction.isButton() && interaction.customId.startsWith('study-')) {
-      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-        return interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true });
-      }
-      await interaction.deferReply({ ephemeral: true });
-      const gid = interaction.guildId;
-      const row = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0] || {};
-      const helpers = studyTips._helpers;
-      const t = helpers.parseHHMM(row.time_of_day || '12:00') || { hour: 12, minute: 0 };
-      const tz = row.timezone || 'UTC';
-      let updated = {};
-      switch (interaction.customId) {
-        case 'study-enable': {
-          const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
-          updated = { enabled: true, next_send_at: nextAt };
-          break;
-        }
-        case 'study-disable': {
-          updated = { enabled: false };
-          break;
-        }
-        case 'study-more-often': {
-          const freq = helpers.nextFrequency(row.frequency_days || 7);
-          updated = { frequency_days: freq };
-          break;
-        }
-        case 'study-less-often': {
-          const freq = helpers.prevFrequency(row.frequency_days || 7);
-          updated = { frequency_days: freq };
-          break;
-        }
-        case 'study-set-time': {
-          const modal = new ModalBuilder().setCustomId('study-time-modal').setTitle('Set study time');
-          modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hhmm').setLabel('Time (HH:MM 24h)').setStyle(TextInputStyle.Short).setValue(row.time_of_day || '12:00').setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tz').setLabel('Timezone (IANA, e.g., Europe/London)').setStyle(TextInputStyle.Short).setValue(row.timezone || 'UTC').setRequired(true))
-          );
-          await interaction.showModal(modal);
-          return; // handled via modal submit
-        }
-      }
-      if (Object.keys(updated).length) {
-        const cols = Object.keys(updated);
-        const vals = Object.values(updated);
-        const setSql = cols.map((c, i) => `${c}=$${i + 2}`).join(', ');
-        await clientDB.query(
-          `INSERT INTO study_tips (guild_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')})
-           ON CONFLICT (guild_id) DO UPDATE SET ${setSql}`,
-          [gid, ...vals]
-        );
-      }
-      // Update panel message if possible
       try {
-        const cur = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0];
-        const comp = require('./features/studyTips');
-        const components = comp && comp._helpers && comp._helpers.panelComponents
-          ? [comp._helpers.panelComponents(!!cur.enabled)]
-          : interaction.message.components;
-        const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
-        const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.`;
-        await interaction.message.edit({ content: msg, components: components.length ? components : interaction.message.components });
-      } catch (_) {}
-      await interaction.editReply({ content: '✅ Updated.' });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+          await interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true }).catch(() => {});
+          return;
+        }
+        // Acknowledge quickly to avoid timeouts and token expiry
+        await interaction.deferUpdate().catch(() => {});
+
+        const gid = interaction.guildId;
+        const row = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0] || {};
+        const helpers = studyTips._helpers;
+        const t = helpers.parseHHMM(row.time_of_day || '12:00') || { hour: 12, minute: 0 };
+        const tz = row.timezone || 'UTC';
+        let updated = {};
+        switch (interaction.customId) {
+          case 'study-enable': {
+            const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+            updated = { enabled: true, next_send_at: nextAt };
+            break;
+          }
+          case 'study-disable': {
+            updated = { enabled: false };
+            break;
+          }
+          case 'study-more-often': {
+            const freq = helpers.nextFrequency(row.frequency_days || 7);
+            updated = { frequency_days: freq };
+            break;
+          }
+          case 'study-less-often': {
+            const freq = helpers.prevFrequency(row.frequency_days || 7);
+            updated = { frequency_days: freq };
+            break;
+          }
+          case 'study-set-time': {
+            const modal = new ModalBuilder().setCustomId('study-time-modal').setTitle('Set study time');
+            modal.addComponents(
+              new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hhmm').setLabel('Time (HH:MM 24h)').setStyle(TextInputStyle.Short).setValue(row.time_of_day || '12:00').setRequired(true)),
+              new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tz').setLabel('Timezone (IANA, e.g., Europe/London)').setStyle(TextInputStyle.Short).setValue(row.timezone || 'UTC').setRequired(true))
+            );
+            await interaction.followUp({ content: 'Open the dialog to set time…', ephemeral: true }).catch(() => {});
+            await interaction.showModal(modal);
+            return; // handled via modal submit
+          }
+        }
+        if (Object.keys(updated).length) {
+          const cols = Object.keys(updated);
+          const vals = Object.values(updated);
+          const setSql = cols.map((c, i) => `${c}=$${i + 2}`).join(', ');
+          await clientDB.query(
+            `INSERT INTO study_tips (guild_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')})
+             ON CONFLICT (guild_id) DO UPDATE SET ${setSql}`,
+            [gid, ...vals]
+          );
+        }
+        // Update panel message if possible
+        try {
+          const cur = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0];
+          const comp = require('./features/studyTips');
+          const components = comp && comp._helpers && comp._helpers.panelComponents
+            ? [comp._helpers.panelComponents(!!cur.enabled)]
+            : interaction.message.components;
+          const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
+          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.`;
+          await interaction.message.edit({ content: msg, components });
+        } catch (_) {}
+        await interaction.followUp({ content: '✅ Updated.', ephemeral: true }).catch(() => {});
+      } catch (e) {
+        console.error('study‑tips button failed:', e);
+      }
       return;
     }
 

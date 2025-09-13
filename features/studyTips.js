@@ -14,6 +14,7 @@ const {
   ChannelType
 } = require('discord.js');
 const clientDB = require('../database');
+const premium = require('../premium');
 const { channelName } = require('../i18n');
 const { getChannelByKey } = require('../channels');
 
@@ -35,6 +36,8 @@ async function ensureTable() {
       last_sent_at       TIMESTAMPTZ
     );
   `);
+  // Backfill new columns over time
+  await clientDB.query(`ALTER TABLE study_tips ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT false`);
 }
 
 function parseHHMM(s) {
@@ -152,7 +155,8 @@ async function ensureSettingsPanel(interaction, settings) {
     `Study Tip Settings\n\n` +
     `Status: ${settings.enabled ? 'Enabled' : 'Disabled'}\n` +
     `Next send (server time): ${next}\n\n` +
-    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.`;
+    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.` +
+    `\nAI tips: ${settings.ai_enabled ? 'On' : 'Off'}`;
 
   const panel = await ch.send({ content: msg, components: [panelComponents(!!settings.enabled)] });
   try { await panel.pin(); } catch (_) {}
@@ -225,6 +229,11 @@ module.exports = {
        .addIntegerOption(o => o.setName('days').setDescription('1, 3, 7, or 14').setRequired(true))
     )
     .addSubcommand(s =>
+      s.setName('set_ai')
+       .setDescription('Enable or disable AI-generated tips')
+       .addStringOption(o => o.setName('mode').setDescription('on or off').setRequired(true).addChoices({name:'on', value:'on'}, {name:'off', value:'off'}))
+    )
+    .addSubcommand(s =>
       s.setName('set_target')
        .setDescription('Choose the channel to receive tips')
        .addChannelOption(o => o.setName('channel').setDescription('Target text channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
@@ -285,6 +294,20 @@ module.exports = {
         const ch = interaction.options.getChannel('channel', true);
         await upsertSettings(gid, { target_channel_id: ch.id });
         return interaction.reply({ content: `✅ Tips will be posted in <#${ch.id}>.`, ephemeral: true });
+      }
+      case 'set_ai': {
+        const mode = interaction.options.getString('mode', true);
+        const ai = mode === 'on';
+        if (ai) {
+          // Require Premium entitlement at guild level (or whitelist)
+          const entitled = (await premium.hasGuildEntitlement(gid)) || premium.isWhitelistedGuild(gid);
+          if (!entitled) {
+            const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+            return interaction.reply({ content: `🔒 Premium required to enable AI tips. ${link}`, ephemeral: true });
+          }
+        }
+        await upsertSettings(gid, { ai_enabled: ai });
+        return interaction.reply({ content: `✅ AI tips ${ai ? 'enabled' : 'disabled'}.`, ephemeral: true });
       }
       case 'open_panel': {
         settings = await readSettings(gid);

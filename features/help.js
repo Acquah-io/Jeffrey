@@ -48,6 +48,7 @@ module.exports = {
           { name: '/createevent', value: 'Open a modal to publish a staff event (name, date/time, location, description).' },
           { name: '/viewevents',  value: 'Show upcoming events for this server (ephemeral).' },
           { name: '/study_tips',  value: 'Configure study reminders. Sub‑commands:\n• enable / disable\n• set_time time:<HH:MM> timezone:<IANA tz>\n• set_frequency days:<14|7|3|1> (two‑weeks → daily)\n• set_target channel:<#channel>\n• open_panel — post a settings panel with buttons' },
+          { name: 'AI tips (Premium 🔒)', value: 'Enable with /study_tips set_ai mode:on — generates a unique short tip per reminder (uses OpenAI). Requires server Premium. Disable with /study_tips set_ai mode:off.' },
           { name: '/smart_search', value: 'Search past messages. Sub‑commands:\n• last_mentioned term:<keyword> — last mention with author and timestamp\n• keyword_between term:<keyword> start:<YYYY‑MM‑DD> end:<YYYY‑MM‑DD> — summary and examples\n• channel_discussed_period period:<yesterday|last week|today> — activity in #general' }
         )
         .setFooter({ text: 'For further assistance, contact the server admin.' });
