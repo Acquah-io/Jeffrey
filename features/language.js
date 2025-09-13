@@ -1,9 +1,6 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { makeLoc, ALL_LOCALES } = require('../localization');
-const clientDB = require('../database');
 const { PermissionFlagsBits } = require('discord.js');
-const { t, preferredLocale, getGuildLocale } = require('../i18n');
-const queueManager = require('../queueManager');
 
 const SUPPORTED = [
   { name: 'English (US)', value: 'en-US' },
@@ -88,6 +85,10 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // Lazy-load heavy modules to avoid side-effects during deploy script
+    const clientDB = require('../database');
+    const { t, preferredLocale, getGuildLocale } = require('../i18n');
+    const queueManager = require('../queueManager');
     const scope = interaction.options.getString('scope');
     const locale = interaction.options.getString('locale');
 
