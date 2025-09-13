@@ -1194,9 +1194,7 @@ client.on('interactionCreate', async (interaction) => {
           const components = comp && comp._helpers && comp._helpers.panelComponents
             ? [comp._helpers.panelComponents(!!cur.enabled)]
             : interaction.message.components;
-          const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
-          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.\nAI tips: ${cur.ai_enabled ? 'On' : 'Off'}`;
-          // Use interaction.update so the button is acknowledged as part of the edit
+          const msg = require('./features/studyTips')._helpers.panelText(cur);
           await interaction.update({ content: msg, components });
         } catch (_) {}
         // No ephemeral follow‑up to avoid token timing causing "Unknown interaction"

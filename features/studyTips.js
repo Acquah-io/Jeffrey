@@ -335,7 +335,6 @@ function panelText(settings){
     `Study Tip Settings\n\n` +
     `Status: ${settings.enabled ? 'Enabled' : 'Disabled'}\n` +
     `Next send (server time): ${next}\n\n` +
-    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.` +
-    `\nAI tips: ${settings.ai_enabled ? 'On' : 'Off'}`
+    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.`
   );
 }
