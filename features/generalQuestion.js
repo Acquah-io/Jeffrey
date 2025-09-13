@@ -4,6 +4,25 @@ const { getOpenAIResponse } = require('./openaiService');
 const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
 
+// Build concise thread context so follow‑ups like "is it bigger"
+// can resolve pronouns using earlier turns in the same thread.
+async function buildThreadContext(thread, { limit = 12 } = {}) {
+  try {
+    const msgs = await thread.messages.fetch({ limit });
+    const ordered = Array.from(msgs.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    const lines = [];
+    for (const m of ordered) {
+      if (m.author.bot) continue; // skip bot chatter to save tokens
+      const name = m.author?.username || 'user';
+      const text = (m.content || '').trim();
+      if (!text) continue;
+      lines.push(`${name}: ${text}`);
+    }
+    const ctx = lines.join('\n');
+    return ctx.length > 1600 ? ctx.slice(-1600) : ctx; // keep bounded
+  } catch (_) { return ''; }
+}
+
 module.exports = async function handleGeneralQuestion(message) {
   // If we're already in a thread, only reply when the bot is mentioned
   if (message.channel.isThread()) {
@@ -24,7 +43,11 @@ module.exports = async function handleGeneralQuestion(message) {
     }
     await message.channel.sendTyping();
     const locale = await preferredLocale({ userId: message.author.id, guildId: message.guildId, discordLocale: message.guild?.preferredLocale });
-    const response = await getOpenAIResponse(cleaned, 300, locale);
+    const context = await buildThreadContext(message.channel);
+    const prompt = context
+      ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${cleaned}`
+      : cleaned;
+    const response = await getOpenAIResponse(prompt, 300, locale);
     await message.channel.send(response);
     return;
   }
@@ -116,7 +139,11 @@ module.exports = async function handleGeneralQuestion(message) {
         try {
           await thread.sendTyping();
           const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-          const response = await getOpenAIResponse(message.content, 300, locale);
+          const context = await buildThreadContext(thread);
+          const prompt = context
+            ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${message.content}`
+            : message.content;
+          const response = await getOpenAIResponse(prompt, 300, locale);
           await thread.send(response);
         } catch (err) {
           console.error("Failed to answer question in thread:", err);
