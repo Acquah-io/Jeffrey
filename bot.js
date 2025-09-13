@@ -1057,13 +1057,17 @@ client.on('interactionCreate', async (interaction) => {
                     break;
                   }
                   await interaction.deferReply({ ephemeral: true });
-                  await ensureRolesForGuild(guild);
-                  await setupDocumentationChannels(guild);
-                  await ensureStudentQueueChannel(guild);
-                  await ensureStaffQueueChannel(guild);
-                  try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('Failed to ensure study-tip-settings during setup:', e.message); }
-                  await checkGuildPermissions(guild);
-                  await interaction.editReply('✅ Setup complete.');
+                  const warnings = [];
+                  try { await ensureRolesForGuild(guild); } catch (e) { console.warn('ensureRolesForGuild:', e.message); warnings.push('roles'); }
+                  try { await setupDocumentationChannels(guild); } catch (e) { console.warn('setupDocumentationChannels:', e.message); warnings.push('docs'); }
+                  try { await ensureStudentQueueChannel(guild); } catch (e) { console.warn('ensureStudentQueueChannel:', e.message); warnings.push('student-queues'); }
+                  try { await ensureStaffQueueChannel(guild); } catch (e) { console.warn('ensureStaffQueueChannel:', e.message); warnings.push('staff-queues'); }
+                  try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('ensureSettingsForGuild:', e.message); warnings.push('study-tip-settings'); }
+                  try { await checkGuildPermissions(guild); } catch (e) { console.warn('checkGuildPermissions:', e.message); warnings.push('permissions'); }
+                  const msg = warnings.length
+                    ? `✅ Setup finished with warnings: ${warnings.join(', ')}.`
+                    : '✅ Setup complete.';
+                  await interaction.editReply(msg);
                 } catch (e) {
                   console.error('Run-setup-again failed:', e);
                   if (interaction.deferred && !interaction.replied) {
