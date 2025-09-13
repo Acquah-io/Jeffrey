@@ -1042,9 +1042,9 @@ client.on('interactionCreate', async (interaction) => {
 
     console.log(`Button clicked: ${interaction.customId}`);
 
-    // Skip queue handler for study‑tips buttons (handled later)
-    if (interaction.isButton() && interaction.customId.startsWith('study-')) {
-      // fall through to study‑tips handler below
+    // Skip queue handler for study‑tips buttons and modal submits
+    if ((interaction.isButton() && interaction.customId.startsWith('study-')) || interaction.isModalSubmit()) {
+      // handled in dedicated blocks below
     } else try {
         // // Defer the reply to avoid timeout errors and allow time to respond later
         // await interaction.deferReply({ ephemeral: true });
