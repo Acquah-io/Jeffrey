@@ -23,7 +23,8 @@ module.exports = {
         .setDescription('Here’s a quick reference you can use in any chat with Jeffrey.')
         .addFields(
           { name: '/smart_search', value: 'Search server chat history with natural‑language queries.' },
-          { name: '/help',        value: 'Display this help message.' },
+          { name: 'Sub‑commands', value: '• last_mentioned term:<keyword> — who last said it and when\n• keyword_between term:<keyword> start:<YYYY‑MM‑DD> end:<YYYY‑MM‑DD>\n• channel_discussed_period period:<yesterday|last week|today>' },
+          { name: '/help',        value: 'Display this help message.' }
         )
         .setFooter({ text: 'Tip: run commands inside a server for role‑specific guidance.' });
 
@@ -41,10 +42,12 @@ module.exports = {
       const staffEmbed = new EmbedBuilder()
         .setColor(0x0099ff)
         .setTitle('Jeffrey Bot Help · Staff')
-        .setDescription('Commands available to staff members')
+        .setDescription('Slash commands available to staff members')
         .addFields(
-          { name: '/setup',       value: 'Re-run setup: roles, docs and queue channels.' },
-          { name: '/createevent', value: 'Create a new event for the server.' },
+          { name: '/setup',       value: 'Re-run setup: roles, docs and queue channels. Use after changing permissions or roles.' },
+          { name: '/createevent', value: 'Open a modal to publish a staff event (name, date/time, location, description).' },
+          { name: '/viewevents',  value: 'Show upcoming events for this server (ephemeral).' },
+          { name: '/smart_search', value: 'Search past messages. Sub‑commands:\n• last_mentioned term:<keyword> — last mention with author and timestamp\n• keyword_between term:<keyword> start:<YYYY‑MM‑DD> end:<YYYY‑MM‑DD> — summary and examples\n• channel_discussed_period period:<yesterday|last week|today> — activity in #general' }
         )
         .setFooter({ text: 'For further assistance, contact the server admin.' });
 
@@ -55,9 +58,10 @@ module.exports = {
       const studentEmbed = new EmbedBuilder()
         .setColor(0x00ff99)
         .setTitle('Jeffrey Bot Help · Students')
-        .setDescription('Commands available to students')
+        .setDescription('Slash commands available to students')
         .addFields(
-          { name: '/viewevents',  value: 'View upcoming events on the server.' },
+          { name: '/viewevents',  value: 'View upcoming events on the server (ephemeral).' },
+          { name: '/smart_search', value: 'Search past messages. Sub‑commands:\n• last_mentioned term:<keyword>\n• keyword_between term:<keyword> start:<YYYY‑MM‑DD> end:<YYYY‑MM‑DD>\n• channel_discussed_period period:<yesterday|last week|today>' }
         )
         .setFooter({ text: 'For further assistance, contact a staff member.' });
 

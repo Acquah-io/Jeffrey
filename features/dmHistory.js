@@ -35,6 +35,10 @@ const EXPLICIT_HISTORY =
   const normaliseUser = (s) => s.replace(/[<@!>]/g, "").toLowerCase().trim();
 
 function getGuildId(msg) {
+  // Prefer explicit hint provided by slash-command bridge
+  if (msg && msg.guildId) return msg.guildId;
+  if (msg && msg.guild && msg.guild.id) return msg.guild.id;
+  if (msg && msg.channel && msg.channel.guildId) return msg.channel.guildId;
   const first = msg?.client?.guilds?.cache?.first?.();
   return first?.id || null;
 }
@@ -199,7 +203,7 @@ async function lastMention(msg, term) {
   if (!gid) return msg.reply('I am not in any server yet. Please invite me first.');
   const r = (
     await clientDB.query(
-      `SELECT to_char(ts,'YYYY-MM-DD HH24:MI') t
+      `SELECT author_tag, channel_id, id, to_char(ts,'YYYY-MM-DD HH24:MI') t
          FROM public_messages
         WHERE guild_id=$1 AND tsv @@ plainto_tsquery('english',$2)
         ORDER BY ts DESC LIMIT 1`,
@@ -207,7 +211,8 @@ async function lastMention(msg, term) {
     )
   ).rows[0];
   if (!r) return msg.reply(`No one mentioned "${term}".`);
-  return msg.reply(`Last mention of "${term}" was ${r.t}.`);
+  const link = `https://discord.com/channels/${gid}/${r.channel_id}/${r.id}`;
+  return msg.reply(`Last mention of "${term}" was by **${r.author_tag}** at ${r.t}. [Jump](${link})`);
 }
 
 async function answerLookup(msg, terms) {

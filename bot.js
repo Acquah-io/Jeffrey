@@ -878,6 +878,7 @@ async function handleHistorySlash(interaction) {
     const fakeMsg = {
       content: query,
       client: interaction.client,
+      guildId, // hint the target guild for accurate DB queries
       reply: (content) => interaction.followUp({ content, ephemeral: true })
     };
   

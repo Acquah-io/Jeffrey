@@ -15,6 +15,18 @@ module.exports = {
         }
 
         try {
+            // Ensure events table exists to avoid errors on fresh installs
+            await clientDB.query(`
+                CREATE TABLE IF NOT EXISTS events (
+                  id           BIGSERIAL PRIMARY KEY,
+                  guild_id     TEXT NOT NULL,
+                  name         TEXT NOT NULL,
+                  description  TEXT,
+                  location     TEXT,
+                  start_at     TIMESTAMPTZ,
+                  created_by   TEXT,
+                  created_at   TIMESTAMPTZ DEFAULT NOW()
+                )`);
             const { rows } = await clientDB.query(
                 `SELECT name, description, location, start_at
                    FROM events
