@@ -1157,12 +1157,14 @@ client.on('interactionCreate', async (interaction) => {
           }
           case 'study-more-often': {
             const freq = helpers.nextFrequency(row.frequency_days || 7);
-            updated = { frequency_days: freq };
+            const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+            updated = { frequency_days: freq, next_send_at: nextAt };
             break;
           }
           case 'study-less-often': {
             const freq = helpers.prevFrequency(row.frequency_days || 7);
-            updated = { frequency_days: freq };
+            const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+            updated = { frequency_days: freq, next_send_at: nextAt };
             break;
           }
           case 'study-set-time': {
@@ -1206,36 +1208,47 @@ client.on('interactionCreate', async (interaction) => {
 
     // Modal submit: study time
     if (interaction.isModalSubmit() && interaction.customId === 'study-time-modal') {
-      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-        return interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true });
-      }
-      const hhmm = interaction.fields.getTextInputValue('hhmm');
-      const tz = interaction.fields.getTextInputValue('tz');
-      const helpers = studyTips._helpers;
-      const t = helpers.parseHHMM(hhmm);
-      if (!t) return interaction.reply({ content: '⛔ Invalid time. Use HH:MM 24h.', ephemeral: true });
-      const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
-      await clientDB.query(
-        `INSERT INTO study_tips (guild_id, time_of_day, timezone, next_send_at) VALUES ($1,$2,$3,$4)
-         ON CONFLICT (guild_id) DO UPDATE SET time_of_day=$2, timezone=$3, next_send_at=$4`,
-        [interaction.guildId, hhmm, tz, nextAt]
-      );
-      // Update the panel message in this channel if present
       try {
-        const pins = await interaction.channel.messages.fetchPinned();
-        const panel = pins.find(m => m.author?.id === interaction.client.user.id && /Study Tip Settings/i.test(m.content));
-        if (panel) {
-          const cur = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [interaction.guildId])).rows[0];
-          const comp = require('./features/studyTips');
-          const components = comp && comp._helpers && comp._helpers.panelComponents
-            ? [comp._helpers.panelComponents(!!cur.enabled)]
-            : panel.components;
-          const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
-          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.\nAI tips: ${cur.ai_enabled ? 'On' : 'Off'}`;
-          await panel.edit({ content: msg, components });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+          return interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true });
         }
-      } catch (_) {}
-      await interaction.reply({ content: `✅ Time set to ${hhmm} ${tz}. Next: <t:${Math.floor(nextAt.getTime()/1000)}:F>`, ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        const hhmm = interaction.fields.getTextInputValue('hhmm');
+        const tz = interaction.fields.getTextInputValue('tz');
+        const helpers = studyTips._helpers;
+        const t = helpers.parseHHMM(hhmm);
+        if (!t) {
+          return interaction.editReply({ content: '⛔ Invalid time. Use HH:MM 24h.' });
+        }
+        const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+        await clientDB.query(
+          `INSERT INTO study_tips (guild_id, time_of_day, timezone, next_send_at) VALUES ($1,$2,$3,$4)
+           ON CONFLICT (guild_id) DO UPDATE SET time_of_day=$2, timezone=$3, next_send_at=$4`,
+          [interaction.guildId, hhmm, tz, nextAt]
+        );
+        // Update the pinned panel via known settings channel if available
+        try {
+          const st = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [interaction.guildId])).rows[0];
+          const comp = require('./features/studyTips');
+          const ch = st.settings_channel_id ? interaction.client.channels.cache.get(st.settings_channel_id) : null;
+          if (ch && ch.isTextBased()) {
+            const pins = await ch.messages.fetchPinned();
+            const panel = pins.find(m => m.author?.id === interaction.client.user.id && /Study Tip Settings/i.test(m.content));
+            if (panel) {
+              const components = comp && comp._helpers && comp._helpers.panelComponents
+                ? [comp._helpers.panelComponents(!!st.enabled)]
+                : panel.components;
+              await panel.edit({ content: comp._helpers.panelText(st), components });
+            }
+          }
+        } catch (_) {}
+        await interaction.editReply({ content: `✅ Time set to ${hhmm} ${tz}. Next: <t:${Math.floor(nextAt.getTime()/1000)}:F>` });
+      } catch (e) {
+        console.error('study-time-modal failed:', e);
+        if (!interaction.replied) {
+          try { await interaction.editReply({ content: '❌ Failed to save. Please try again.' }); } catch (_) {}
+        }
+      }
       return;
     }
 });
