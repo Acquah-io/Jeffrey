@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -38,6 +38,7 @@ const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
 const createEventFeature = require('./features/createEvents');
 const queueManager = require('./queueManager');
+const studyTips = require('./features/studyTips');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
 
@@ -386,6 +387,35 @@ client.once('ready', async () => {
         console.log('====================================\n');
     } catch (error) {
         console.error('Error registering commands:', error);
+    }
+
+    // ─── Study‑tips scheduler loop ─────────────────────────────────────────
+    try {
+      await require('./features/studyTips')._helpers.ensureTable();
+      setInterval(async () => {
+        try {
+          const due = (await clientDB.query(
+            `SELECT * FROM study_tips WHERE enabled=true AND next_send_at IS NOT NULL AND next_send_at <= NOW()`
+          )).rows;
+          for (const row of due) {
+            const guild = client.guilds.cache.get(row.guild_id);
+            if (!guild) continue;
+            let channel = row.target_channel_id ? guild.channels.cache.get(row.target_channel_id) : null;
+            if (!channel) channel = require('./channels').getChannelByKey(guild, 'channel_student_docs', ChannelType.GuildText) || guild.systemChannel;
+            if (!channel) continue;
+            await channel.send('⏰ Study time! Take 25 minutes to focus on your studies. When you’re done, take a 5‑minute break.');
+
+            const t = studyTips._helpers.parseHHMM(row.time_of_day) || { hour: 12, minute: 0 };
+            // Compute next schedule from now using configured TZ and frequency
+            const nextAt = studyTips._helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: row.timezone || 'UTC', plusDays: row.frequency_days - 1 });
+            await clientDB.query('UPDATE study_tips SET last_sent_at=NOW(), next_send_at=$2 WHERE guild_id=$1', [row.guild_id, nextAt]);
+          }
+        } catch (e) {
+          console.warn('study‑tips tick failed:', e.message);
+        }
+      }, 60 * 1000);
+    } catch (e) {
+      console.warn('Could not start study‑tips scheduler:', e.message);
     }
 
     // For each guild the bot is in, ensure roles and refresh channels
@@ -1050,6 +1080,93 @@ client.on('interactionCreate', async (interaction) => {
             // If already replied, optionally log or ignore
             console.warn('Could not send error message — interaction already replied.');
         }
+    }
+
+    // ─── Study‑tips buttons ───────────────────────────────────────────────
+    if (interaction.isButton() && interaction.customId.startsWith('study-')) {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+        return interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true });
+      }
+      await interaction.deferReply({ ephemeral: true });
+      const gid = interaction.guildId;
+      const row = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0] || {};
+      const helpers = studyTips._helpers;
+      const t = helpers.parseHHMM(row.time_of_day || '12:00') || { hour: 12, minute: 0 };
+      const tz = row.timezone || 'UTC';
+      let updated = {};
+      switch (interaction.customId) {
+        case 'study-enable': {
+          const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+          updated = { enabled: true, next_send_at: nextAt };
+          break;
+        }
+        case 'study-disable': {
+          updated = { enabled: false };
+          break;
+        }
+        case 'study-more-often': {
+          const freq = helpers.nextFrequency(row.frequency_days || 7);
+          updated = { frequency_days: freq };
+          break;
+        }
+        case 'study-less-often': {
+          const freq = helpers.prevFrequency(row.frequency_days || 7);
+          updated = { frequency_days: freq };
+          break;
+        }
+        case 'study-set-time': {
+          const modal = new ModalBuilder().setCustomId('study-time-modal').setTitle('Set study time');
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hhmm').setLabel('Time (HH:MM 24h)').setStyle(TextInputStyle.Short).setValue(row.time_of_day || '12:00').setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tz').setLabel('Timezone (IANA, e.g., Europe/London)').setStyle(TextInputStyle.Short).setValue(row.timezone || 'UTC').setRequired(true))
+          );
+          await interaction.showModal(modal);
+          return; // handled via modal submit
+        }
+      }
+      if (Object.keys(updated).length) {
+        const cols = Object.keys(updated);
+        const vals = Object.values(updated);
+        const setSql = cols.map((c, i) => `${c}=$${i + 2}`).join(', ');
+        await clientDB.query(
+          `INSERT INTO study_tips (guild_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')})
+           ON CONFLICT (guild_id) DO UPDATE SET ${setSql}`,
+          [gid, ...vals]
+        );
+      }
+      // Update panel message if possible
+      try {
+        const cur = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [gid])).rows[0];
+        const comp = require('./features/studyTips');
+        const components = comp && comp._helpers && comp._helpers.panelComponents
+          ? [comp._helpers.panelComponents(!!cur.enabled)]
+          : interaction.message.components;
+        const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
+        const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.`;
+        await interaction.message.edit({ content: msg, components: components.length ? components : interaction.message.components });
+      } catch (_) {}
+      await interaction.editReply({ content: '✅ Updated.' });
+      return;
+    }
+
+    // Modal submit: study time
+    if (interaction.isModalSubmit() && interaction.customId === 'study-time-modal') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+        return interaction.reply({ content: '⛔ Manage Server is required.', ephemeral: true });
+      }
+      const hhmm = interaction.fields.getTextInputValue('hhmm');
+      const tz = interaction.fields.getTextInputValue('tz');
+      const helpers = studyTips._helpers;
+      const t = helpers.parseHHMM(hhmm);
+      if (!t) return interaction.reply({ content: '⛔ Invalid time. Use HH:MM 24h.', ephemeral: true });
+      const nextAt = helpers.computeNextUTC({ hour: t.hour, minute: t.minute, timeZone: tz });
+      await clientDB.query(
+        `INSERT INTO study_tips (guild_id, time_of_day, timezone, next_send_at) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (guild_id) DO UPDATE SET time_of_day=$2, timezone=$3, next_send_at=$4`,
+        [interaction.guildId, hhmm, tz, nextAt]
+      );
+      await interaction.reply({ content: `✅ Time set to ${hhmm} ${tz}. Next: <t:${Math.floor(nextAt.getTime()/1000)}:F>`, ephemeral: true });
+      return;
     }
 });
 
