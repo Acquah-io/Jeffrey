@@ -149,16 +149,7 @@ async function ensureSettingsPanel(interaction, settings) {
       ]
     });
   }
-  const tz = settings.timezone || 'UTC';
-  const time = settings.time_of_day || '12:00';
-  const freq = settings.frequency_days || 7;
-  const next = settings.next_send_at ? `<t:${Math.floor(new Date(settings.next_send_at).getTime()/1000)}:F>` : 'TBA';
-  const msg =
-    `Study Tip Settings\n\n` +
-    `Status: ${settings.enabled ? 'Enabled' : 'Disabled'}\n` +
-    `Next send (server time): ${next}\n\n` +
-    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.` +
-    `\nAI tips: ${settings.ai_enabled ? 'On' : 'Off'}`;
+  const msg = panelText(settings);
 
   const panel = await ch.send({ content: msg, components: [panelComponents(!!settings.enabled)] });
   try { await panel.pin(); } catch (_) {}
@@ -197,16 +188,7 @@ async function ensureSettingsForGuild(guild) {
   const pins = await ch.messages.fetchPinned().catch(() => null);
   const hasPanel = pins && pins.find(m => m.author?.id === guild.client.user.id && /Study Tip Settings/i.test(m.content));
   if (!hasPanel) {
-    const tz = st.timezone || 'UTC';
-    const time = st.time_of_day || '12:00';
-    const freq = st.frequency_days || 7;
-    const next = st.next_send_at ? `<t:${Math.floor(new Date(st.next_send_at).getTime()/1000)}:F>` : 'TBA';
-    const msg =
-      `Study Tip Settings\n\n` +
-      `Status: ${st.enabled ? 'Enabled' : 'Disabled'}\n` +
-      `Next send (server time): ${next}\n\n` +
-      `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.`;
-    const sent = await ch.send({ content: msg, components: [panelComponents(!!st.enabled)] });
+    const sent = await ch.send({ content: panelText(st), components: [panelComponents(!!st.enabled)] });
     try { await sent.pin(); } catch (_) {}
   }
 }
@@ -309,6 +291,16 @@ module.exports = {
           }
         }
         await upsertSettings(gid, { ai_enabled: ai });
+        // Try to update existing panel text
+        try {
+          const st = await readSettings(gid);
+          const ch = st.settings_channel_id ? interaction.guild.channels.cache.get(st.settings_channel_id) : null;
+          const pins = ch ? await ch.messages.fetchPinned() : null;
+          const panel = pins?.find(m => m.author?.id === interaction.client.user.id && /Study Tip Settings/i.test(m.content));
+          if (panel) {
+            await panel.edit({ content: panelText(st), components: [panelComponents(!!st.enabled)] });
+          }
+        } catch (_) {}
         return interaction.reply({ content: `✅ AI tips ${ai ? 'enabled' : 'disabled'}.`, ephemeral: true });
       }
       case 'open_panel': {
@@ -329,5 +321,21 @@ module.exports = {
     prevFrequency,
     FREQUENCIES,
     panelComponents,
+    panelText,
   }
 };
+
+// Build the canonical panel text from settings
+function panelText(settings){
+  const tz = settings.timezone || 'UTC';
+  const time = settings.time_of_day || '12:00';
+  const freq = settings.frequency_days || 7;
+  const next = settings.next_send_at ? `<t:${Math.floor(new Date(settings.next_send_at).getTime()/1000)}:F>` : 'TBA';
+  return (
+    `Study Tip Settings\n\n` +
+    `Status: ${settings.enabled ? 'Enabled' : 'Disabled'}\n` +
+    `Next send (server time): ${next}\n\n` +
+    `Tips are sent every ${freq === 1 ? 'day' : `${freq} days`} at ${time} ${tz}.` +
+    `\nAI tips: ${settings.ai_enabled ? 'On' : 'Off'}`
+  );
+}

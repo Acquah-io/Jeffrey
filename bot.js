@@ -1029,7 +1029,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
     
-    if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return;
 
     // Let the generalQuestion collector handle these
     if (interaction.customId === 'yes_private_help' || interaction.customId === 'no_private_help') {
