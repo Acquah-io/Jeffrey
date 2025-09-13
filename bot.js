@@ -1042,14 +1042,10 @@ client.on('interactionCreate', async (interaction) => {
 
     console.log(`Button clicked: ${interaction.customId}`);
 
-    // Ignore buttons not related to queue
-    //if (!interaction.customId.startsWith('queue-')) return;
-
-    const { customId, user, guild } = interaction;
-
-    // Queues are free – no guild entitlement checks needed for interactions
-
-    try {
+    // Skip queue handler for study‑tips buttons (handled later)
+    if (interaction.isButton() && interaction.customId.startsWith('study-')) {
+      // fall through to study‑tips handler below
+    } else try {
         // // Defer the reply to avoid timeout errors and allow time to respond later
         // await interaction.deferReply({ ephemeral: true });
 
@@ -1075,7 +1071,7 @@ client.on('interactionCreate', async (interaction) => {
                   }
                 }
                 break;
-            }
+          }
             /* ---------- Student selectors & buttons ---------- */
             case 'student-queue-selector':
                 await handleStudentQueueSelect(interaction);
@@ -1197,11 +1193,11 @@ client.on('interactionCreate', async (interaction) => {
             ? [comp._helpers.panelComponents(!!cur.enabled)]
             : interaction.message.components;
           const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
-          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.`;
+          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.\nAI tips: ${cur.ai_enabled ? 'On' : 'Off'}`;
           // Use interaction.update so the button is acknowledged as part of the edit
           await interaction.update({ content: msg, components });
         } catch (_) {}
-        await interaction.followUp({ content: '✅ Updated.', ephemeral: true }).catch(() => {});
+        // No ephemeral follow‑up to avoid token timing causing "Unknown interaction"
       } catch (e) {
         console.error('study‑tips button failed:', e);
       }
@@ -1224,6 +1220,21 @@ client.on('interactionCreate', async (interaction) => {
          ON CONFLICT (guild_id) DO UPDATE SET time_of_day=$2, timezone=$3, next_send_at=$4`,
         [interaction.guildId, hhmm, tz, nextAt]
       );
+      // Update the panel message in this channel if present
+      try {
+        const pins = await interaction.channel.messages.fetchPinned();
+        const panel = pins.find(m => m.author?.id === interaction.client.user.id && /Study Tip Settings/i.test(m.content));
+        if (panel) {
+          const cur = (await clientDB.query('SELECT * FROM study_tips WHERE guild_id=$1', [interaction.guildId])).rows[0];
+          const comp = require('./features/studyTips');
+          const components = comp && comp._helpers && comp._helpers.panelComponents
+            ? [comp._helpers.panelComponents(!!cur.enabled)]
+            : panel.components;
+          const next = cur.next_send_at ? `<t:${Math.floor(new Date(cur.next_send_at).getTime()/1000)}:F>` : 'TBA';
+          const msg = `Study Tip Settings\n\nStatus: ${cur.enabled ? 'Enabled' : 'Disabled'}\nNext send (server time): ${next}\n\nTips are sent every ${cur.frequency_days === 1 ? 'day' : `${cur.frequency_days} days`} at ${cur.time_of_day} ${cur.timezone}.\nAI tips: ${cur.ai_enabled ? 'On' : 'Off'}`;
+          await panel.edit({ content: msg, components });
+        }
+      } catch (_) {}
       await interaction.reply({ content: `✅ Time set to ${hhmm} ${tz}. Next: <t:${Math.floor(nextAt.getTime()/1000)}:F>`, ephemeral: true });
       return;
     }

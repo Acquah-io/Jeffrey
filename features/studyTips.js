@@ -112,12 +112,14 @@ async function readSettings(guildId) {
 }
 
 function nextFrequency(current) {
+  // more often → shorter interval (move RIGHT in [14,7,3,1])
   const idx = FREQUENCIES.indexOf(current);
-  return idx > 0 ? FREQUENCIES[idx - 1] : current; // more often
+  return idx >= 0 && idx < FREQUENCIES.length - 1 ? FREQUENCIES[idx + 1] : current;
 }
 function prevFrequency(current) {
+  // less often → longer interval (move LEFT)
   const idx = FREQUENCIES.indexOf(current);
-  return idx >= 0 && idx < FREQUENCIES.length - 1 ? FREQUENCIES[idx + 1] : current; // less often
+  return idx > 0 ? FREQUENCIES[idx - 1] : current;
 }
 
 function panelComponents(enabled) {
