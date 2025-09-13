@@ -20,6 +20,7 @@ function parseSkuList(s) {
 
 const userSkus = parseSkuList(PREMIUM_SKU_USER);
 const guildSkus = parseSkuList(PREMIUM_SKU_GUILD);
+const testGuildAllow = parseSkuList(process.env.PREMIUM_TEST_ALLOW_GUILD_IDS);
 
 // simple in-memory caches to reduce API calls
 const cacheUser = new Map(); // key: userId -> { at, ok }
@@ -59,6 +60,7 @@ async function hasUserEntitlement(userId) {
 
 async function hasGuildEntitlement(guildId) {
   // If no SKUs configured, allow all guilds (free mode)
+  if (testGuildAllow.includes(String(guildId))) return true; // explicit whitelist for testing
   if (!guildSkus.length) return true;
   const now = Date.now();
   const hit = cacheGuild.get(guildId);
@@ -72,4 +74,5 @@ async function hasGuildEntitlement(guildId) {
 module.exports = {
   hasUserEntitlement,
   hasGuildEntitlement,
+  isWhitelistedGuild: (guildId) => testGuildAllow.includes(String(guildId)),
 };

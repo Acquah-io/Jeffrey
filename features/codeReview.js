@@ -28,7 +28,7 @@ module.exports = async function handleCodeReview(message) {
         return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
       }
       if (interaction.customId === "code_review_yes") {
-        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
         if (!ok) {
           const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
           await interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
@@ -40,7 +40,7 @@ module.exports = async function handleCodeReview(message) {
         const response = await getOpenAIResponse(`Please review the following code: ${message.content}` , 1000, locale);
         await message.author.send(response);
       } else if (interaction.customId === "code_review_no") {
-        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
         if (!ok) {
           const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
           await interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });

@@ -16,7 +16,7 @@ module.exports = async function handleGeneralQuestion(message) {
     if (!cleaned.length) return;
 
     // Premium check for user
-    const ok = await premium.hasUserEntitlement(message.author.id);
+    const ok = (await premium.hasUserEntitlement(message.author.id)) || premium.isWhitelistedGuild(message.guildId);
     if (!ok) {
       const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
       await message.channel.send(`🔒 Premium required. ${link}`);
@@ -51,7 +51,7 @@ module.exports = async function handleGeneralQuestion(message) {
       await interaction.deferUpdate().catch(() => {});
       if (interaction.customId === "yes_private_help") {
         // Premium check for user
-        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
         if (!ok) {
           const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
           await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
@@ -79,7 +79,7 @@ module.exports = async function handleGeneralQuestion(message) {
         }
       } else if (interaction.customId === "no_private_help") {
         // Premium check for user
-        const ok = await premium.hasUserEntitlement(interaction.user.id);
+        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
         if (!ok) {
           const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
           await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });

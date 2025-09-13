@@ -636,17 +636,6 @@ async function ensureStaffQueueChannel(guild) {
  * handleDmMessage(), then piping it through that parser.
  */
 async function handleHistorySlash(interaction) {
-    // Premium Apps: require user entitlement for history queries
-    try {
-      const ok = await premium.hasUserEntitlement(interaction.user.id);
-      if (!ok) {
-        const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
-        return interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
-      }
-    } catch (e) {
-      // Fail closed to avoid accidental free access if entitlement check errors
-      return interaction.reply({ content: '🔒 Premium required. Please try again later.', ephemeral: true });
-    }
     // Work out which guild’s history we should search.
     // • If the command is invoked inside a server channel we already have
     //   `interaction.guild`.
@@ -673,6 +662,18 @@ async function handleHistorySlash(interaction) {
       }
     }
     const guildId = guild.id;
+
+    // Premium Apps: require user entitlement, but allow test whitelist by guild
+    try {
+      const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(guildId);
+      if (!ok) {
+        const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+        return interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+      }
+    } catch (e) {
+      // Fail closed to avoid accidental free access if entitlement check errors
+      return interaction.reply({ content: '🔒 Premium required. Please try again later.', ephemeral: true });
+    }
     const sub = interaction.options.getSubcommand();
     let query;
   
