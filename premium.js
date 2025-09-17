@@ -71,8 +71,28 @@ async function hasGuildEntitlement(guildId) {
   return ok;
 }
 
+function isWhitelistedGuild(guildId) {
+  return testGuildAllow.includes(String(guildId));
+}
+
+async function hasPremiumAccess({ userId, guildId } = {}) {
+  if (guildId && isWhitelistedGuild(guildId)) return true;
+
+  if (guildId) {
+    const guildOk = await hasGuildEntitlement(guildId);
+    if (guildOk) return true;
+  }
+
+  if (userId) {
+    return await hasUserEntitlement(userId);
+  }
+
+  return false;
+}
+
 module.exports = {
   hasUserEntitlement,
   hasGuildEntitlement,
-  isWhitelistedGuild: (guildId) => testGuildAllow.includes(String(guildId)),
+  hasPremiumAccess,
+  isWhitelistedGuild,
 };

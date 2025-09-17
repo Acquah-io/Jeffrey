@@ -284,7 +284,7 @@ module.exports = {
         const ai = mode === 'on';
         if (ai) {
           // Require Premium entitlement at guild level (or whitelist)
-          const entitled = (await premium.hasGuildEntitlement(gid)) || premium.isWhitelistedGuild(gid);
+          const entitled = await premium.hasPremiumAccess({ guildId: gid });
           if (!entitled) {
             const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
             return interaction.reply({ content: `🔒 Premium required to enable AI tips. ${link}`, ephemeral: true });

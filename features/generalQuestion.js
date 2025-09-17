@@ -23,7 +23,62 @@ async function buildThreadContext(thread, { limit = 12 } = {}) {
   } catch (_) { return ''; }
 }
 
+function buildChoiceRow(disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setLabel("Yes").setStyle(ButtonStyle.Primary).setCustomId("yes_private_help").setDisabled(disabled),
+    new ButtonBuilder().setLabel("No").setStyle(ButtonStyle.Danger).setCustomId("no_private_help").setDisabled(disabled)
+  );
+}
+
 module.exports = async function handleGeneralQuestion(message) {
+  const guildId = message.guildId;
+  const authorId = message.author.id;
+  const premiumLink = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
+
+  async function ensurePremium({ userId = authorId } = {}) {
+    return await premium.hasPremiumAccess({ userId, guildId });
+  }
+
+  async function answerInThread({ notifySuccess, notifyFailure } = {}) {
+    let thread;
+    try {
+      thread = await message.startThread({
+        name: `Question – ${message.author.username}`,
+        autoArchiveDuration: 1440 // 24 hours
+      });
+    } catch (err) {
+      console.error("Failed to create thread for question:", err);
+      const notify = notifyFailure || (async (text) => { await message.reply(text); });
+      await notify("⛔ I don’t have permission to create a thread here. I’ll reply in this channel instead.");
+      try {
+        await message.channel.sendTyping();
+        const locale = await preferredLocale({ userId: authorId, guildId, discordLocale: message.guild?.preferredLocale });
+        const response = await getOpenAIResponse(message.content, 300, locale);
+        await message.reply(response);
+      } catch (fallbackErr) {
+        console.error('Fallback answer failed:', fallbackErr);
+      }
+      return;
+    }
+
+    const notify = notifySuccess || (async (text) => { await message.reply(text); });
+    await notify(`I’ve answered in the thread <#${thread.id}>.`);
+
+    try {
+      await thread.sendTyping();
+      const locale = await preferredLocale({ userId: authorId, guildId, discordLocale: message.guild?.preferredLocale });
+      const context = await buildThreadContext(thread);
+      const prompt = context
+        ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${message.content}`
+        : message.content;
+      const response = await getOpenAIResponse(prompt, 300, locale);
+      await thread.send(response);
+    } catch (err) {
+      console.error("Failed to answer question in thread:", err);
+      await thread.send("Sorry – something went wrong while generating my answer.");
+    }
+  }
+
   // If we're already in a thread, only reply when the bot is mentioned
   if (message.channel.isThread()) {
     if (!message.mentions.has(message.client.user)) return;
@@ -34,11 +89,9 @@ module.exports = async function handleGeneralQuestion(message) {
 
     if (!cleaned.length) return;
 
-    // Premium check for user
-    const ok = (await premium.hasUserEntitlement(message.author.id)) || premium.isWhitelistedGuild(message.guildId);
+    const ok = await ensurePremium();
     if (!ok) {
-      const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
-      await message.channel.send(`🔒 Premium required. ${link}`);
+      await message.channel.send(`🔒 Premium required. ${premiumLink}`);
       return;
     }
     await message.channel.sendTyping();
@@ -51,105 +104,82 @@ module.exports = async function handleGeneralQuestion(message) {
     await message.channel.send(response);
     return;
   }
-  if (message.content.endsWith('?') && message.guildId !== null) {
-    const buttonRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel("Yes").setStyle(ButtonStyle.Primary).setCustomId("yes_private_help"),
-      new ButtonBuilder().setLabel("No").setStyle(ButtonStyle.Danger).setCustomId("no_private_help")
-    );
 
-    const reply = await message.reply({
-      content: "Would you like me to help you with this question privately?",
-      components: [buttonRow],
-    });
+  if (message.content.endsWith('?') && guildId !== null) {
+    const buttonRow = buildChoiceRow();
+    const disabledRow = buildChoiceRow(true);
 
-    // No hard 60‑second timeout – keeps listening until the message is deleted
-    const collector = reply.createMessageComponentCollector({ componentType: ComponentType.Button });
+    try {
+      const dmPrompt = await message.author.send({
+        content: "Would you like me to help you with this question privately?",
+        components: [buttonRow],
+      });
 
-    collector.on('collect', async (interaction) => {
-      // Only the original author can choose
-      if (interaction.user.id !== message.author.id) {
-        return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
-      }
-      // Acknowledge immediately to avoid 3s timeout regardless of entitlement latency
-      await interaction.deferUpdate().catch(() => {});
-      if (interaction.customId === "yes_private_help") {
-        // Premium check for user
-        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
-        if (!ok) {
-          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
-          await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
-          return;
-        }
-        try {
-          // Generate the private help message
-          const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-          const response = await getOpenAIResponse(message.content, 300, locale);
+      try {
+        await message.reply("I’ve sent you a DM so you can choose how you’d like me to help.");
+      } catch (_) {}
 
-          // Attempt to DM the user
-          await interaction.user.send(response);
+      const collector = dmPrompt.createMessageComponentCollector({ componentType: ComponentType.Button, time: 10 * 60 * 1000 });
 
-          // Confirmation
-          await interaction.followUp({
-            content: "I've sent you a private response.",
-            ephemeral: true
-          });
-        } catch (err) {
-          console.error("Failed to send DM:", err);
-          await interaction.followUp({
-            content: "⛔ I couldn’t send you a DM. Please check your privacy settings and try again.",
-            ephemeral: true
-          });
-        }
-      } else if (interaction.customId === "no_private_help") {
-        // Premium check for user
-        const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(interaction.guildId);
-        if (!ok) {
-          const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
-          await interaction.followUp({ content: `🔒 Premium required. ${link}`, ephemeral: true });
+      collector.on('collect', async (interaction) => {
+        if (interaction.user.id !== authorId) {
+          await interaction.reply({ content: 'Only the original author can choose.' });
           return;
         }
 
-        let thread;
-        try {
-          thread = await message.startThread({
-            name: `Question – ${message.author.username}`,
-            autoArchiveDuration: 1440 // 24 hours
-          });
-        } catch (err) {
-          console.error("Failed to create thread for question:", err);
-          await interaction.followUp({
-            content: "⛔ I don’t have permission to create a thread here. I’ll reply in this channel instead.",
-            ephemeral: true
+        const entitled = await ensurePremium({ userId: interaction.user.id });
+        if (!entitled) {
+          await interaction.reply({ content: `🔒 Premium required. ${premiumLink}` });
+          return;
+        }
+
+        collector.stop('handled');
+
+        if (interaction.customId === "yes_private_help") {
+          await interaction.update({
+            content: "Great! I’ll send the answer privately.",
+            components: [disabledRow],
           });
           try {
-            await message.channel.sendTyping();
-            const response = await getOpenAIResponse(message.content, 300);
-            await message.reply(response);
-          } catch (e) {
-            console.error('Fallback answer failed:', e);
+            const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: interaction.locale || message.guild?.preferredLocale });
+            const response = await getOpenAIResponse(message.content, 300, locale);
+            await interaction.user.send(response);
+            await interaction.followUp({ content: "I've sent you a private response." });
+          } catch (err) {
+            console.error("Failed to send private response:", err);
+            await interaction.followUp({
+              content: "⛔ I couldn’t send you a DM. Please check your privacy settings and try again.",
+            });
           }
-          return;
-        }
+        } else if (interaction.customId === "no_private_help") {
+          await interaction.update({
+            content: "Okay! I’ll answer in the server thread.",
+            components: [disabledRow],
+          });
 
-        await interaction.followUp({
-          content: `I’ve answered in the thread <#${thread.id}>.`,
-          ephemeral: true
-        });
-
-        try {
-          await thread.sendTyping();
-          const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-          const context = await buildThreadContext(thread);
-          const prompt = context
-            ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${message.content}`
-            : message.content;
-          const response = await getOpenAIResponse(prompt, 300, locale);
-          await thread.send(response);
-        } catch (err) {
-          console.error("Failed to answer question in thread:", err);
-          await thread.send("Sorry – something went wrong while generating my answer.");
+          await answerInThread({
+            notifySuccess: async (text) => { await interaction.followUp({ content: text }); },
+            notifyFailure: async (text) => { await interaction.followUp({ content: text }); },
+          });
         }
+      });
+
+      collector.on('end', async (_collected, reason) => {
+        if (reason !== 'handled') {
+          try { await dmPrompt.edit({ components: [disabledRow] }); } catch (_) {}
+        }
+      });
+    } catch (err) {
+      console.error('Failed to DM private-choice prompt:', err);
+      const entitled = await ensurePremium();
+      if (!entitled) {
+        await message.reply(`🔒 Premium required. ${premiumLink}`);
+        return;
       }
-    });
+      await answerInThread({
+        notifySuccess: async (text) => { await message.reply(text); },
+        notifyFailure: async (text) => { await message.reply(text); },
+      });
+    }
   }
 };

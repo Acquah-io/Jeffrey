@@ -440,7 +440,7 @@ client.once('ready', async () => {
             try {
               if (row.ai_enabled && process.env.OPENAI_API_KEY) {
                 // Guild must be entitled (or whitelisted) to use AI tips
-                const entitled = (await require('./premium').hasGuildEntitlement(guild.id)) || require('./premium').isWhitelistedGuild(guild.id);
+                const entitled = await premium.hasPremiumAccess({ guildId: guild.id });
                 if (!entitled) throw new Error('premium-required');
                 const { getGuildLocale } = require('./i18n');
                 const locale = await getGuildLocale(guild.id, guild.preferredLocale || 'en-US');
@@ -748,7 +748,7 @@ async function handleHistorySlash(interaction) {
 
     // Premium Apps: require user entitlement, but allow test whitelist by guild
     try {
-      const ok = (await premium.hasUserEntitlement(interaction.user.id)) || premium.isWhitelistedGuild(guildId);
+      const ok = await premium.hasPremiumAccess({ userId: interaction.user.id, guildId });
       if (!ok) {
         const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
         return interaction.reply({ content: `🔒 Premium required. ${link}`, ephemeral: true });
