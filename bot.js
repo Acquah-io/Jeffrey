@@ -1266,7 +1266,7 @@ client.on('messageCreate', async (message) => {
     if (message.channel.type === ChannelType.DM) {
       // Premium Apps: require user entitlement for DM history
       try {
-        const ok = await premium.hasUserEntitlement(message.author.id);
+        const ok = await premium.hasPremiumAccess({ userId: message.author.id, client: message.client });
         if (!ok) {
           const link = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
           await message.reply(`🔒 Premium required. ${link}`);

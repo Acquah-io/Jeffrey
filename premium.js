@@ -75,7 +75,7 @@ function isWhitelistedGuild(guildId) {
   return testGuildAllow.includes(String(guildId));
 }
 
-async function hasPremiumAccess({ userId, guildId } = {}) {
+async function hasPremiumAccess({ userId, guildId, client } = {}) {
   if (guildId && isWhitelistedGuild(guildId)) return true;
 
   if (guildId) {
@@ -84,7 +84,27 @@ async function hasPremiumAccess({ userId, guildId } = {}) {
   }
 
   if (userId) {
-    return await hasUserEntitlement(userId);
+    const userOk = await hasUserEntitlement(userId);
+    if (userOk) return true;
+
+    if (client) {
+      for (const guild of client.guilds.cache.values()) {
+        let hasMember = guild.members.cache.has(userId);
+        if (!hasMember) {
+          try {
+            await guild.members.fetch({ user: userId, force: false });
+            hasMember = guild.members.cache.has(userId);
+          } catch (_) {
+            continue; // Not in this guild or lacking perms
+          }
+        }
+        if (!hasMember) continue;
+
+        if (isWhitelistedGuild(guild.id)) return true;
+        const entitled = await hasGuildEntitlement(guild.id);
+        if (entitled) return true;
+      }
+    }
   }
 
   return false;
