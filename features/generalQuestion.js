@@ -1,5 +1,11 @@
 // features/generalQuestion.js
-const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
+const {
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  ComponentType,
+  ChannelType
+} = require("discord.js");
 const { getOpenAIResponse } = require('./openaiService');
 const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
@@ -30,20 +36,27 @@ function buildChoiceRow(disabled = false) {
   );
 }
 
+function threadName(prefix, username) {
+  const base = `${prefix} – ${username}`;
+  return base.length > 90 ? base.slice(0, 90) : base;
+}
+
 module.exports = async function handleGeneralQuestion(message) {
   const guildId = message.guildId;
+  if (!guildId) return;
+
   const authorId = message.author.id;
   const premiumLink = process.env.PREMIUM_PURCHASE_URL || 'Please subscribe from the App Directory listing to use this feature.';
 
   async function ensurePremium({ userId = authorId } = {}) {
-    return await premium.hasPremiumAccess({ userId, guildId });
+    return await premium.hasPremiumAccess({ userId, guildId, client: message.client });
   }
 
-  async function answerInThread({ notifySuccess, notifyFailure } = {}) {
+  async function answerInPublicThread({ notifySuccess, notifyFailure } = {}) {
     let thread;
     try {
       thread = await message.startThread({
-        name: `Question – ${message.author.username}`,
+        name: threadName('Question', message.author.username),
         autoArchiveDuration: 1440 // 24 hours
       });
     } catch (err) {
@@ -79,6 +92,93 @@ module.exports = async function handleGeneralQuestion(message) {
     }
   }
 
+  async function sendDmPrompt() {
+    const buttonRow = buildChoiceRow();
+    const disabledRow = buildChoiceRow(true);
+
+    try {
+      const dmPrompt = await message.author.send({
+        content: "Would you like me to help you with this question privately?",
+        components: [buttonRow],
+      });
+
+      try { await message.react('✉️'); } catch (_) {}
+
+      const collector = dmPrompt.createMessageComponentCollector({ componentType: ComponentType.Button, time: 10 * 60 * 1000 });
+
+      collector.on('collect', async (interaction) => {
+        const entitled = await ensurePremium({ userId: interaction.user.id });
+        if (!entitled) {
+          await interaction.reply({ content: `🔒 Premium required. ${premiumLink}` });
+          return;
+        }
+
+        collector.stop('handled');
+
+        if (interaction.customId === "yes_private_help") {
+          await interaction.update({
+            content: "Great! I’ll send the answer privately.",
+            components: [disabledRow],
+          });
+          try {
+            const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: message.guild?.preferredLocale });
+            const response = await getOpenAIResponse(message.content, 300, locale);
+            await interaction.user.send(response);
+            await interaction.followUp({ content: "I've sent you a private response." });
+          } catch (err) {
+            console.error("Failed to send private response:", err);
+            await interaction.followUp({
+              content: "⛔ I couldn’t send you a DM. Please check your privacy settings and try again.",
+            });
+          }
+        } else if (interaction.customId === "no_private_help") {
+          await interaction.update({
+            content: "Okay! I’ll answer in the server thread.",
+            components: [disabledRow],
+          });
+
+          await answerInPublicThread({
+            notifySuccess: async (text) => { await interaction.followUp({ content: text }); },
+            notifyFailure: async (text) => { await interaction.followUp({ content: text }); },
+          });
+        }
+      });
+
+      collector.on('end', async (_collected, reason) => {
+        if (reason !== 'handled') {
+          try { await dmPrompt.edit({ components: [disabledRow] }); } catch (_) {}
+        }
+      });
+    } catch (err) {
+      console.error('Failed to DM private-choice prompt:', err);
+      await answerInPublicThread();
+    }
+  }
+
+  async function openPrivatePromptThread() {
+    try {
+      const thread = await message.channel.threads.create({
+        name: threadName('Jeffrey prompt', message.author.username),
+        autoArchiveDuration: 1440,
+        reason: 'Collect preference for private answer',
+        type: ChannelType.PrivateThread,
+        invitable: false,
+        startMessage: message.id,
+      });
+      return thread;
+    } catch (err) {
+      console.error('Failed to open private prompt thread:', err);
+      return null;
+    }
+  }
+
+  function disableButtons(messageWithButtons) {
+    try {
+      const disabledRow = buildChoiceRow(true);
+      return messageWithButtons.edit({ components: [disabledRow] });
+    } catch (_) { return null; }
+  }
+
   // If we're already in a thread, only reply when the bot is mentioned
   if (message.channel.isThread()) {
     if (!message.mentions.has(message.client.user)) return;
@@ -105,81 +205,71 @@ module.exports = async function handleGeneralQuestion(message) {
     return;
   }
 
-  if (message.content.endsWith('?') && guildId !== null) {
+  if (message.content.endsWith('?')) {
+    const promptThread = await openPrivatePromptThread();
+    if (!promptThread) {
+      await sendDmPrompt();
+      return;
+    }
+
     const buttonRow = buildChoiceRow();
     const disabledRow = buildChoiceRow(true);
+    const promptMessage = await promptThread.send({
+      content: "Would you like me to help you with this question privately?",
+      components: [buttonRow],
+    });
 
-    try {
-      const dmPrompt = await message.author.send({
-        content: "Would you like me to help you with this question privately?",
-        components: [buttonRow],
-      });
+    const collector = promptMessage.createMessageComponentCollector({ componentType: ComponentType.Button, time: 10 * 60 * 1000 });
 
-      try {
-        await message.reply("I’ve sent you a DM so you can choose how you’d like me to help.");
-      } catch (_) {}
-
-      const collector = dmPrompt.createMessageComponentCollector({ componentType: ComponentType.Button, time: 10 * 60 * 1000 });
-
-      collector.on('collect', async (interaction) => {
-        if (interaction.user.id !== authorId) {
-          await interaction.reply({ content: 'Only the original author can choose.' });
-          return;
-        }
-
-        const entitled = await ensurePremium({ userId: interaction.user.id });
-        if (!entitled) {
-          await interaction.reply({ content: `🔒 Premium required. ${premiumLink}` });
-          return;
-        }
-
-        collector.stop('handled');
-
-        if (interaction.customId === "yes_private_help") {
-          await interaction.update({
-            content: "Great! I’ll send the answer privately.",
-            components: [disabledRow],
-          });
-          try {
-            const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: interaction.locale || message.guild?.preferredLocale });
-            const response = await getOpenAIResponse(message.content, 300, locale);
-            await interaction.user.send(response);
-            await interaction.followUp({ content: "I've sent you a private response." });
-          } catch (err) {
-            console.error("Failed to send private response:", err);
-            await interaction.followUp({
-              content: "⛔ I couldn’t send you a DM. Please check your privacy settings and try again.",
-            });
-          }
-        } else if (interaction.customId === "no_private_help") {
-          await interaction.update({
-            content: "Okay! I’ll answer in the server thread.",
-            components: [disabledRow],
-          });
-
-          await answerInThread({
-            notifySuccess: async (text) => { await interaction.followUp({ content: text }); },
-            notifyFailure: async (text) => { await interaction.followUp({ content: text }); },
-          });
-        }
-      });
-
-      collector.on('end', async (_collected, reason) => {
-        if (reason !== 'handled') {
-          try { await dmPrompt.edit({ components: [disabledRow] }); } catch (_) {}
-        }
-      });
-    } catch (err) {
-      console.error('Failed to DM private-choice prompt:', err);
-      const entitled = await ensurePremium();
-      if (!entitled) {
-        await message.reply(`🔒 Premium required. ${premiumLink}`);
-        return;
+    collector.on('collect', async (interaction) => {
+      if (interaction.user.id !== authorId) {
+        return interaction.reply({ content: 'Only the original author can choose.', ephemeral: true });
       }
-      await answerInThread({
-        notifySuccess: async (text) => { await message.reply(text); },
-        notifyFailure: async (text) => { await message.reply(text); },
-      });
-    }
+
+      const entitled = await ensurePremium({ userId: interaction.user.id });
+      if (!entitled) {
+        return interaction.reply({ content: `🔒 Premium required. ${premiumLink}`, ephemeral: true });
+      }
+
+      collector.stop('handled');
+
+      if (interaction.customId === "yes_private_help") {
+        await interaction.update({
+          content: "Great! I’ll send the answer privately.",
+          components: [disabledRow],
+        });
+        try {
+          const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: interaction.locale || message.guild?.preferredLocale });
+          const response = await getOpenAIResponse(message.content, 300, locale);
+          await interaction.user.send(response);
+          await interaction.followUp({ content: "I've sent you a private response.", ephemeral: true });
+        } catch (err) {
+          console.error("Failed to send private response:", err);
+          await interaction.followUp({
+            content: "⛔ I couldn’t send you a DM. Please check your privacy settings and try again.",
+            ephemeral: true
+          });
+        }
+      } else if (interaction.customId === "no_private_help") {
+        await interaction.update({
+          content: "Okay! I’ll answer in the server thread.",
+          components: [disabledRow],
+        });
+
+        await answerInPublicThread({
+          notifySuccess: async (text) => { await interaction.followUp({ content: text, ephemeral: true }); },
+          notifyFailure: async (text) => { await interaction.followUp({ content: text, ephemeral: true }); },
+        });
+      }
+
+      try { await promptThread.setArchived(true); } catch (_) {}
+    });
+
+    collector.on('end', async (_collected, reason) => {
+      if (reason !== 'handled') {
+        await disableButtons(promptMessage);
+        try { await promptThread.setArchived(true); } catch (_) {}
+      }
+    });
   }
 };
