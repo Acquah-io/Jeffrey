@@ -5,7 +5,7 @@ const {
   createAudioResource,
   NoSubscriberBehavior,
   AudioPlayerStatus,
-  StreamType
+  demuxProbe
 } = require('@discordjs/voice');
 const { ChannelType } = require('discord.js');
 const prism = require('prism-media');
@@ -132,12 +132,13 @@ async function playNext(state) {
       model: process.env.JEFFREY_TTS_MODEL || 'gpt-4o-mini-tts',
       voice: process.env.JEFFREY_TTS_VOICE || 'alloy',
       input: text,
-      format: 'mp3'
+      format: 'ogg'
     });
     const arrayBuffer = await speech.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const stream = Readable.from([buffer]);
-    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+    const { stream: probedStream, type } = await demuxProbe(stream);
+    const resource = createAudioResource(probedStream, { inputType: type });
     state.playing = true;
     state.audioPlayer.play(resource);
   } catch (err) {
@@ -268,10 +269,18 @@ async function disconnect(guildId) {
 
 async function ensureAssistantChannel(guild) {
   const name = targetChannelName();
+  const desiredLabel = name.replace(/\b\w/g, (c) => c.toUpperCase());
   let channel = guild.channels.cache.find(ch => ch.type === ChannelType.GuildVoice && ch.name.toLowerCase() === name);
   if (!channel) {
+    const legacy = guild.channels.cache.find(ch => ch.type === ChannelType.GuildVoice && /geoffrey/i.test(ch.name));
+    if (legacy) {
+      try { await legacy.setName(desiredLabel); } catch (_) {}
+      channel = legacy;
+    }
+  }
+  if (!channel) {
     channel = await guild.channels.create({
-      name: name.replace(/\b\w/g, (c) => c.toUpperCase()),
+      name: desiredLabel,
       type: ChannelType.GuildVoice,
       reason: 'Jeffrey voice assistant channel',
     });
