@@ -222,7 +222,7 @@ async function handleComponent(interaction) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('class_session')
-    .setDescription('Manage Geoffrey voice class sessions')
+    .setDescription('Manage Jeffrey voice class sessions')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(sub =>
       sub.setName('start')

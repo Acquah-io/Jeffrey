@@ -1,4 +1,12 @@
-const { joinVoiceChannel, EndBehaviorType } = require('@discordjs/voice');
+const {
+  joinVoiceChannel,
+  EndBehaviorType,
+  createAudioPlayer,
+  createAudioResource,
+  NoSubscriberBehavior,
+  AudioPlayerStatus,
+  StreamType
+} = require('@discordjs/voice');
 const { ChannelType } = require('discord.js');
 const prism = require('prism-media');
 const fs = require('fs');
@@ -9,6 +17,7 @@ const { pipeline } = require('stream');
 const { promisify } = require('util');
 const OpenAI = require('openai');
 const summaries = require('./classSummaries');
+const { Readable } = require('stream');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pipelineAsync = promisify(pipeline);
@@ -18,13 +27,13 @@ const CHANNELS = 2;
 const BIT_DEPTH = 16;
 const MAX_RESPONSE_CHARS = 900;
 
-const assistantState = new Map(); // guildId -> { channelId, connection, tempDir }
+const assistantState = new Map(); // guildId -> { channelId, connection, tempDir, audioPlayer, queue, playing }
 const processingUsers = new Set();
 
 tmp.setGracefulCleanup();
 
 function targetChannelName() {
-  return (process.env.GEOFFREY_ASSISTANT_CHANNEL_NAME || 'Ask Geoffrey').toLowerCase();
+  return (process.env.JEFFREY_ASSISTANT_CHANNEL_NAME || 'Ask Jeffrey').toLowerCase();
 }
 
 async function pcmToWav(pcmPath, wavPath) {
@@ -71,7 +80,7 @@ async function buildAnswer(guild, questionText) {
   }).join('\n\n');
 
   const messages = [
-    { role: 'system', content: 'You are Geoffrey, a helpful classroom assistant. Answer succinctly (max 150 words) using the supplied knowledge snippets when relevant. If information is missing, say so politely.' },
+    { role: 'system', content: 'You are Jeffrey, a helpful classroom assistant. Answer succinctly (max 150 words) using the supplied knowledge snippets when relevant. If information is missing, say so politely.' },
     context ? { role: 'system', content: `Knowledge snippets:\n${context}` } : null,
     { role: 'user', content: questionText }
   ].filter(Boolean);
@@ -92,6 +101,61 @@ function ensureState(guildId) {
     assistantState.set(guildId, {});
   }
   return assistantState.get(guildId);
+}
+
+function ensureAudioPlayer(state) {
+  if (!state.audioPlayer) {
+    const player = createAudioPlayer({
+      behaviors: { noSubscriber: NoSubscriberBehavior.Play }
+    });
+    player.on('error', err => console.error('Voice assistant audio error:', err));
+    player.on(AudioPlayerStatus.Idle, () => {
+      if (state.queue && state.queue.length) {
+        playNext(state).catch(err => console.error('Voice assistant queue error:', err));
+      } else {
+        state.playing = false;
+      }
+    });
+    state.audioPlayer = player;
+  }
+  return state.audioPlayer;
+}
+
+async function playNext(state) {
+  if (!state.queue || !state.queue.length) {
+    state.playing = false;
+    return;
+  }
+  const text = state.queue.shift();
+  try {
+    const speech = await openai.audio.speech.create({
+      model: process.env.JEFFREY_TTS_MODEL || 'gpt-4o-mini-tts',
+      voice: process.env.JEFFREY_TTS_VOICE || 'alloy',
+      input: text,
+      format: 'mp3'
+    });
+    const arrayBuffer = await speech.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const stream = Readable.from([buffer]);
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+    state.playing = true;
+    state.audioPlayer.play(resource);
+  } catch (err) {
+    console.error('Failed to synthesise assistant speech:', err);
+    state.playing = false;
+    if (state.queue.length) {
+      await playNext(state);
+    }
+  }
+}
+
+async function enqueueSpeech(state, text) {
+  if (!text) return;
+  if (!state.queue) state.queue = [];
+  state.queue.push(text);
+  if (!state.playing) {
+    await playNext(state);
+  }
 }
 
 function createRecordingPipeline(connection, userId, channel) {
@@ -135,7 +199,14 @@ function createRecordingPipeline(connection, userId, channel) {
         console.error('Assistant answer failed:', err2);
         return 'I ran into a problem while trying to answer that. Could you try again?';
       });
-      await channel.send({ content: `<@${userId}> asked: ${transcript}\n\n**Geoffrey:** ${answer}` }).catch(() => {});
+      const state = ensureState(channel.guild.id);
+      await enqueueSpeech(state, answer);
+      const member = await channel.guild.members.fetch(userId).catch(() => null);
+      if (member) {
+        await member.send({
+          content: `You asked: ${transcript}\n\n**Jeffrey:** ${answer}`
+        }).catch(() => {});
+      }
     } catch (error) {
       console.error('Assistant processing error:', error);
     } finally {
@@ -166,6 +237,9 @@ async function ensureConnection(channel) {
   state.channelId = channel.id;
   assistantState.set(guildId, state);
 
+  const player = ensureAudioPlayer(state);
+  connection.subscribe(player);
+
   connection.receiver.speaking.on('start', (userId) => {
     const hash = `${guildId}:${userId}`;
     if (processingUsers.has(hash)) return;
@@ -187,6 +261,7 @@ async function disconnect(guildId) {
   if (!state) return;
   try {
     state.connection?.destroy();
+    state.audioPlayer?.stop(true);
   } catch (_) {}
   assistantState.delete(guildId);
 }
@@ -198,7 +273,7 @@ async function ensureAssistantChannel(guild) {
     channel = await guild.channels.create({
       name: name.replace(/\b\w/g, (c) => c.toUpperCase()),
       type: ChannelType.GuildVoice,
-      reason: 'Geoffrey voice assistant channel',
+      reason: 'Jeffrey voice assistant channel',
     });
   }
   return channel;

@@ -284,7 +284,7 @@ async function handleVoiceUpdate(oldState, newState) {
     }
 
     if (!active && newState.channel && !newState.member.user.bot) {
-      const autoName = (process.env.GEOFFREY_AUTO_RECORD_CHANNEL_NAME || '').toLowerCase();
+      const autoName = (process.env.JEFFREY_AUTO_RECORD_CHANNEL_NAME || '').toLowerCase();
       if (autoName && newState.channel.name.toLowerCase() === autoName) {
         await startSession(newState.channel, { initiatedBy: newState.id });
         const current = activeSessions.get(guildId);
