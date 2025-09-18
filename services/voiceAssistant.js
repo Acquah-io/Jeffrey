@@ -202,12 +202,6 @@ function createRecordingPipeline(connection, userId, channel) {
       });
       const state = ensureState(channel.guild.id);
       await enqueueSpeech(state, answer);
-      const member = await channel.guild.members.fetch(userId).catch(() => null);
-      if (member) {
-        await member.send({
-          content: `You asked: ${transcript}\n\n**Jeffrey:** ${answer}`
-        }).catch(() => {});
-      }
     } catch (error) {
       console.error('Assistant processing error:', error);
     } finally {
