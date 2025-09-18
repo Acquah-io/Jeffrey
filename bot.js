@@ -38,6 +38,8 @@ const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
 const createEventFeature = require('./features/createEvents');
 const queueManager = require('./queueManager');
+const voiceSessions = require('./services/voiceSessions');
+const voiceAssistant = require('./services/voiceAssistant');
 const studyTips = require('./features/studyTips');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
@@ -135,7 +137,8 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildVoiceStates
     ],
     partials: [Partials.Channel],
 });
@@ -164,6 +167,7 @@ async function refreshChannels(guild) {
     await setupDocumentationChannels(guild);
     // Also ensure the Study Tips settings channel/panel exists
     try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('Failed to ensure study-tip-settings:', e.message); }
+    try { await voiceAssistant.ensureAssistantChannel(guild); } catch (e) { console.warn('Failed to ensure voice assistant channel:', e.message); }
 }
 
 // Post-install permission health check with a re‑invite button
@@ -1040,6 +1044,16 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    if ((interaction.isButton() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('class-summary-')) {
+      const classSession = interaction.client.commands.get('class_session');
+      if (classSession?.handleComponent) {
+        await classSession.handleComponent(interaction);
+      } else {
+        await interaction.reply({ content: 'This control is no longer active.', ephemeral: true });
+      }
+      return;
+    }
+
     console.log(`Button clicked: ${interaction.customId}`);
 
     // Skip queue handler for study‑tips buttons and modal submits
@@ -1307,6 +1321,11 @@ client.on('messageCreate', async (message) => {
     } catch (err) {
       console.error('Live‑logging failed:', err);
     }
+});
+
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  await voiceSessions.handleVoiceUpdate(oldState, newState);
+  await voiceAssistant.handleVoiceUpdate(oldState, newState);
 });
 
 /**

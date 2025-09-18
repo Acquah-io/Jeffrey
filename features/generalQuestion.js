@@ -3,6 +3,7 @@ const { ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require(
 const { getOpenAIResponse } = require('./openaiService');
 const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
+const { augmentPrompt } = require('../services/knowledge');
 
 // Build concise thread context so follow-ups like "is it bigger"
 // can resolve pronouns using earlier turns in the same thread.
@@ -55,7 +56,8 @@ module.exports = async function handleGeneralQuestion(message) {
       try {
         await message.channel.sendTyping();
         const locale = await preferredLocale({ userId: authorId, guildId, discordLocale: message.guild?.preferredLocale });
-        const response = await getOpenAIResponse(message.content, 300, locale);
+        const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content });
+        const response = await getOpenAIResponse(prompt, 300, locale);
         await message.reply(response);
       } catch (fallbackErr) {
         console.error('Fallback answer failed:', fallbackErr);
@@ -70,9 +72,10 @@ module.exports = async function handleGeneralQuestion(message) {
       await thread.sendTyping();
       const locale = await preferredLocale({ userId: authorId, guildId, discordLocale: message.guild?.preferredLocale });
       const context = await buildThreadContext(thread);
-      const prompt = context
+      const basePrompt = context
         ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${message.content}`
         : message.content;
+      const prompt = await augmentPrompt({ guildId, basePrompt, searchText: message.content });
       const response = await getOpenAIResponse(prompt, 300, locale);
       await thread.send(response);
     } catch (err) {
@@ -99,9 +102,10 @@ module.exports = async function handleGeneralQuestion(message) {
     await message.channel.sendTyping();
     const locale = await preferredLocale({ userId: message.author.id, guildId: message.guildId, discordLocale: message.guild?.preferredLocale });
     const context = await buildThreadContext(message.channel);
-    const prompt = context
+    const basePrompt = context
       ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${cleaned}`
       : cleaned;
+    const prompt = await augmentPrompt({ guildId: message.guildId, basePrompt, searchText: cleaned });
     const response = await getOpenAIResponse(prompt, 300, locale);
     await message.channel.send(response);
     return;
@@ -137,7 +141,8 @@ module.exports = async function handleGeneralQuestion(message) {
         });
         try {
           const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: interaction.locale || message.guild?.preferredLocale });
-          const response = await getOpenAIResponse(message.content, 300, locale);
+          const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content });
+          const response = await getOpenAIResponse(prompt, 300, locale);
           await interaction.user.send(response);
           await interaction.followUp({ content: "I've sent you a private response.", ephemeral: true });
         } catch (err) {
