@@ -67,7 +67,7 @@ async function transcribeAudio(wavPath) {
   const response = await openai.audio.transcriptions.create({
     file: stream,
     model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
-    response_format: 'verbose_json',
+    response_format: 'json',
   });
   return response?.text?.trim();
 }
