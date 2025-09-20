@@ -26,11 +26,69 @@ const SAMPLE_RATE = 48000;
 const CHANNELS = 2;
 const BIT_DEPTH = 16;
 const MAX_RESPONSE_CHARS = 900;
+const SILENCE_LEVEL_THRESHOLD = Number(process.env.JEFFREY_MIN_SIGNAL_LEVEL || 800);
+const MIN_TRANSCRIPT_CHARS = 5;
+const MIN_ENGLISH_CONFIDENCE = 0.75;
 
 const assistantState = new Map(); // guildId -> { channelId, connection, tempDir, audioPlayer, queue, playing }
 const processingUsers = new Set();
 
 tmp.setGracefulCleanup();
+
+async function computeSignalLevel(pcmPath) {
+  try {
+    const buffer = await fsp.readFile(pcmPath);
+    if (!buffer || buffer.length < 4) return 0;
+    let sum = 0;
+    let samples = 0;
+    for (let i = 0; i < buffer.length; i += 2) {
+      const sample = buffer.readInt16LE(i);
+      sum += Math.abs(sample);
+      samples += 1;
+    }
+    if (!samples) return 0;
+    return sum / samples;
+  } catch (err) {
+    console.error('Signal level computation failed:', err);
+    return 0;
+  }
+}
+
+function englishConfidence(text) {
+  if (!text) return 0;
+  const cleaned = text.replace(/[^A-Za-z\s']/g, '');
+  const ratio = cleaned.length / text.length;
+  return Number.isFinite(ratio) ? ratio : 0;
+}
+
+function isLikelyEnglish(text) {
+  return englishConfidence(text) >= MIN_ENGLISH_CONFIDENCE;
+}
+
+async function ensureEnglishReply(text, { questionText, fallback }) {
+  const safeFallback = fallback || 'Let me think about that and get back to you shortly.';
+  const candidate = text && text.trim() ? text : safeFallback;
+  if (isLikelyEnglish(candidate)) return candidate;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: 'Rewrite the assistant reply in fluent English. Keep factual content, remove foreign language artefacts.' },
+        { role: 'system', content: `Original reply: ${candidate}` },
+        questionText ? { role: 'user', content: `User question: ${questionText}` } : null,
+      ].filter(Boolean),
+      max_tokens: 200,
+    });
+    const rewritten = completion?.choices?.[0]?.message?.content;
+    if (rewritten && rewritten.trim()) {
+      return rewritten.trim();
+    }
+  } catch (err) {
+    console.error('ensureEnglishReply fallback failed:', err);
+  }
+  return safeFallback;
+}
 
 function targetChannelName() {
   return (process.env.JEFFREY_ASSISTANT_CHANNEL_NAME || 'Ask Jeffrey').toLowerCase();
@@ -68,6 +126,7 @@ async function transcribeAudio(wavPath) {
     file: stream,
     model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
     response_format: 'json',
+    language: 'en',
   });
   return response?.text?.trim();
 }
@@ -141,6 +200,7 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
     const historyText = getHistorySearchSeed(state);
     const contextText = contextMessages.map(m => m.content).join('\n\n');
     const realtimePrompt = [
+      'The user is speaking English. Resolve ambiguous phonetics as English words.',
       contextText ? `Context:\n${contextText}` : null,
       historyText ? `Recent conversation:\n${historyText}` : null,
       `${speakerName}: ${questionText}`
@@ -156,6 +216,7 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
     audioStream = stream || null;
     finalTextPromise = textPromise
       .then(text => text || defaultReply)
+      .then(text => ensureEnglishReply(text, { questionText, fallback: defaultReply }))
       .catch(err => {
         console.error('Realtime text failed:', err);
         return defaultReply;
@@ -176,7 +237,8 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
           max_tokens: 250,
         });
         const text = completion?.choices?.[0]?.message?.content || defaultReply;
-        const trimmed = text.slice(0, MAX_RESPONSE_CHARS);
+        const english = await ensureEnglishReply(text, { questionText, fallback: defaultReply });
+        const trimmed = english.slice(0, MAX_RESPONSE_CHARS);
         appendHistory(state, { role: 'assistant', content: trimmed });
         return trimmed;
       } catch (fallbackErr) {
@@ -325,10 +387,34 @@ function createRecordingPipeline(connection, userId, channel) {
         processingUsers.delete(`${channel.guild.id}:${userId}`);
         return;
       }
+      const signalLevel = await computeSignalLevel(pcmPath);
+      if (signalLevel < SILENCE_LEVEL_THRESHOLD) {
+        dir.removeCallback();
+        processingUsers.delete(`${channel.guild.id}:${userId}`);
+        return;
+      }
+
       const wavPath = path.join(dir.name, `${Date.now()}-${userId}.wav`);
       await pcmToWav(pcmPath, wavPath);
       const transcript = await transcribeAudio(wavPath);
-      if (!transcript || transcript.length < 5) {
+      if (!transcript || transcript.length < MIN_TRANSCRIPT_CHARS) {
+        dir.removeCallback();
+        processingUsers.delete(`${channel.guild.id}:${userId}`);
+        return;
+      }
+
+      if (!isLikelyEnglish(transcript)) {
+        const msg = 'I only understand spoken English right now. Could you please repeat that in English?';
+        const state = ensureState(channel.guild.id);
+        const member = channel.guild.members.cache.get(userId);
+        const speakerName = member?.displayName || member?.user?.username || 'User';
+        appendHistory(state, { role: 'user', content: transcript.slice(0, MAX_RESPONSE_CHARS), name: speakerName, userId });
+        appendHistory(state, { role: 'assistant', content: msg });
+        await enqueueSpeech(state, {
+          textPromise: Promise.resolve(msg),
+          audioStream: null,
+          fallbackText: msg,
+        });
         dir.removeCallback();
         processingUsers.delete(`${channel.guild.id}:${userId}`);
         return;

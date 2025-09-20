@@ -4,7 +4,7 @@ const { PassThrough } = require('stream');
 const { v4: uuidv4 } = require('uuid');
 
 const REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime';
-const DEFAULT_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-09-12';
+const DEFAULT_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-latest';
 const DEFAULT_VOICE = process.env.JEFFREY_REALTIME_VOICE || 'alloy';
 const RESPONSE_TIMEOUT_MS = Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000);
 
