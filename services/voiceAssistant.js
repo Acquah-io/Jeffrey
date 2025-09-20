@@ -5,7 +5,7 @@ const {
   createAudioResource,
   NoSubscriberBehavior,
   AudioPlayerStatus,
-  demuxProbe
+  StreamType
 } = require('@discordjs/voice');
 const { ChannelType } = require('discord.js');
 const prism = require('prism-media');
@@ -13,11 +13,10 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const tmp = require('tmp');
-const { pipeline } = require('stream');
+const { pipeline, PassThrough } = require('stream');
 const { promisify } = require('util');
 const OpenAI = require('openai');
 const summaries = require('./classSummaries');
-const { Readable } = require('stream');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pipelineAsync = promisify(pipeline);
@@ -136,9 +135,9 @@ async function playNext(state) {
     });
     const arrayBuffer = await speech.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const stream = Readable.from(buffer);
-    const { stream: probedStream, type } = await demuxProbe(stream);
-    const resource = createAudioResource(probedStream, { inputType: type });
+    const stream = new PassThrough();
+    stream.end(buffer);
+    const resource = createAudioResource(stream, { inputType: StreamType.OggOpus });
     state.playing = true;
     state.audioPlayer.play(resource);
   } catch (err) {
