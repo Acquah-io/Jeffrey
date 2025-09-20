@@ -233,9 +233,11 @@ async function playNext(state) {
   try {
     let opusStream;
     if (audioStream) {
+      audioStream.on('error', err => console.error('Realtime audio stream error:', err));
       const ffmpeg = new prism.FFmpeg({
         args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
       });
+      ffmpeg.on('error', err => console.error('FFmpeg stream error:', err));
       const pcm = audioStream.pipe(ffmpeg);
       const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
       opusStream = pcm.pipe(opus);
@@ -255,6 +257,7 @@ async function playNext(state) {
       const ffmpeg = new prism.FFmpeg({
         args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
       });
+      ffmpeg.on('error', err => console.error('FFmpeg TTS error:', err));
       const pcm = source.pipe(ffmpeg);
       const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
       opusStream = pcm.pipe(opus);
@@ -273,6 +276,7 @@ async function playNext(state) {
           audioStream: null,
           fallbackText: finalText,
         });
+        return;
       }
     } catch (innerErr) {
       console.error('Fallback speech after failure also failed:', innerErr);
@@ -280,6 +284,7 @@ async function playNext(state) {
         await playNext(state);
       }
     }
+    return;
   }
 }
 

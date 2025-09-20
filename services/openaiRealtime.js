@@ -110,6 +110,8 @@ class OpenAIRealtimeClient extends EventEmitter {
       timeout: null,
       initialResolved: false,
     };
+    // prevent unhandled 'error' events from tearing down the process
+    entry.audioStream.on('error', () => {});
 
     let initialResolve;
     let initialReject;
@@ -122,7 +124,8 @@ class OpenAIRealtimeClient extends EventEmitter {
       if (entry.initialResolved) return;
       entry.initialResolved = true;
       if (entry.timeout) clearTimeout(entry.timeout);
-      entry.timeout = setTimeout(() => {
+      entry.timeout = null;
+      entry.finalTimeout = setTimeout(() => {
         if (this.pending.has(responseId)) {
           entry.finalReject(new Error('Realtime response timeout'));
           this.pending.delete(responseId);
@@ -134,6 +137,7 @@ class OpenAIRealtimeClient extends EventEmitter {
       if (entry.initialResolved) return;
       entry.initialResolved = true;
       if (entry.timeout) clearTimeout(entry.timeout);
+      if (entry.finalTimeout) clearTimeout(entry.finalTimeout);
       entry.audioStream.destroy(err);
       initialReject(err);
     };
@@ -141,10 +145,12 @@ class OpenAIRealtimeClient extends EventEmitter {
     const finalPromise = new Promise((resolve, reject) => {
       entry.finalResolve = (value) => {
         entry.audioStream.end();
+        if (entry.finalTimeout) clearTimeout(entry.finalTimeout);
         resolve(value);
       };
       entry.finalReject = (err) => {
         entry.audioStream.destroy(err);
+        if (entry.finalTimeout) clearTimeout(entry.finalTimeout);
         reject(err);
       };
     });
@@ -160,7 +166,19 @@ class OpenAIRealtimeClient extends EventEmitter {
     entry.finalPromise = finalPromise;
     this.pending.set(responseId, entry);
 
-    this.send({
+    const sendOrFail = (payload) => {
+      try {
+        this.send(payload);
+      } catch (err) {
+        entry.initialReject(err);
+        entry.finalReject(err);
+        if (entry.timeout) clearTimeout(entry.timeout);
+        this.pending.delete(responseId);
+        throw err;
+      }
+    };
+
+    sendOrFail({
       type: 'conversation.item.create',
       item: {
         type: 'message',
@@ -172,7 +190,7 @@ class OpenAIRealtimeClient extends EventEmitter {
     });
 
     if (clientState) {
-      this.send({
+      sendOrFail({
         type: 'client.event',
         event: {
           type: 'conversation_state.update',
@@ -181,7 +199,7 @@ class OpenAIRealtimeClient extends EventEmitter {
       });
     }
 
-    this.send({
+    sendOrFail({
       type: 'response.create',
       response: {
         id: responseId,
