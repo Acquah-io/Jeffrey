@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const WebSocket = require('ws');
+const { PassThrough } = require('stream');
 const { v4: uuidv4 } = require('uuid');
 
 const REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime';
@@ -78,7 +79,10 @@ class OpenAIRealtimeClient extends EventEmitter {
       this.connecting = false;
       this.ws = null;
       this.pending.forEach((entry) => {
-        entry.reject(new Error('Realtime connection closed'));
+        const err = new Error('Realtime connection closed');
+        entry.initialReject(err);
+        entry.finalReject(err);
+        if (entry.timeout) clearTimeout(entry.timeout);
       });
       this.pending.clear();
       this.emit('disconnected');
@@ -100,30 +104,61 @@ class OpenAIRealtimeClient extends EventEmitter {
     await this.ensureConnection();
 
     const responseId = uuidv4();
-    const resultPromise = new Promise((resolve, reject) => {
-      const entry = {
-        text: '',
-        audioChunks: [],
-        resolve: null,
-        reject: null,
-        timeout: null,
-      };
-      entry.resolve = (value) => {
-        if (entry.timeout) clearTimeout(entry.timeout);
-        resolve(value);
-      };
-      entry.reject = (err) => {
-        if (entry.timeout) clearTimeout(entry.timeout);
-        reject(err);
-      };
+    const entry = {
+      text: '',
+      audioStream: new PassThrough({ highWaterMark: 1 << 20 }),
+      timeout: null,
+      initialResolved: false,
+    };
+
+    let initialResolve;
+    let initialReject;
+    const initialPromise = new Promise((resolve, reject) => {
+      initialResolve = resolve;
+      initialReject = reject;
+    });
+
+    entry.initialResolve = (value) => {
+      if (entry.initialResolved) return;
+      entry.initialResolved = true;
+      if (entry.timeout) clearTimeout(entry.timeout);
       entry.timeout = setTimeout(() => {
         if (this.pending.has(responseId)) {
-          entry.reject(new Error('Realtime response timeout'));
+          entry.finalReject(new Error('Realtime response timeout'));
           this.pending.delete(responseId);
         }
       }, RESPONSE_TIMEOUT_MS);
-      this.pending.set(responseId, entry);
+      initialResolve(value);
+    };
+    entry.initialReject = (err) => {
+      if (entry.initialResolved) return;
+      entry.initialResolved = true;
+      if (entry.timeout) clearTimeout(entry.timeout);
+      entry.audioStream.destroy(err);
+      initialReject(err);
+    };
+
+    const finalPromise = new Promise((resolve, reject) => {
+      entry.finalResolve = (value) => {
+        entry.audioStream.end();
+        resolve(value);
+      };
+      entry.finalReject = (err) => {
+        entry.audioStream.destroy(err);
+        reject(err);
+      };
     });
+
+    entry.timeout = setTimeout(() => {
+      if (this.pending.has(responseId)) {
+        entry.initialReject(new Error('Realtime response timeout'));
+        entry.finalReject(new Error('Realtime response timeout'));
+        this.pending.delete(responseId);
+      }
+    }, RESPONSE_TIMEOUT_MS);
+
+    entry.finalPromise = finalPromise;
+    this.pending.set(responseId, entry);
 
     this.send({
       type: 'conversation.item.create',
@@ -159,7 +194,10 @@ class OpenAIRealtimeClient extends EventEmitter {
       },
     });
 
-    return resultPromise;
+    return initialPromise.then(() => ({
+      audioStream: entry.audioStream,
+      textPromise: entry.finalPromise,
+    }));
   }
 
   handleMessage(message) {
@@ -171,8 +209,10 @@ class OpenAIRealtimeClient extends EventEmitter {
         const pending = this.pending.get(message.response_id || message.response?.id);
         if (pending && message.delta) {
           pending.text += message.delta;
+          pending.initialResolve({ started: false });
         } else if (pending && message.output_text) {
           pending.text += message.output_text;
+          pending.initialResolve({ started: false });
         }
         break;
       }
@@ -181,16 +221,21 @@ class OpenAIRealtimeClient extends EventEmitter {
         if (pending && message.delta) {
           try {
             const chunk = Buffer.from(message.delta, 'base64');
-            pending.audioChunks.push(chunk);
-          } catch (_) {}
+            pending.audioStream.write(chunk);
+            pending.initialResolve({ started: true });
+          } catch (err) {
+            pending.audioStream.destroy(err);
+            pending.initialReject(err);
+          }
         }
         break;
       }
       case 'response.completed': {
         const pending = this.pending.get(message.response?.id || message.id);
         if (pending) {
-          const audioBuffer = pending.audioChunks.length ? Buffer.concat(pending.audioChunks) : null;
-          pending.resolve({ text: pending.text.trim(), audio: audioBuffer });
+          pending.initialResolve({ started: false });
+          pending.finalResolve(pending.text.trim());
+          if (pending.timeout) clearTimeout(pending.timeout);
           this.pending.delete(message.response?.id || message.id);
         }
         break;
@@ -198,7 +243,10 @@ class OpenAIRealtimeClient extends EventEmitter {
       case 'error': {
         const pending = this.pending.get(message.response?.id || message.id);
         if (pending) {
-          pending.reject(new Error(message.error?.message || 'Realtime API error'));
+          const err = new Error(message.error?.message || 'Realtime API error');
+          pending.initialReject(err);
+          pending.finalReject(err);
+          if (pending.timeout) clearTimeout(pending.timeout);
           this.pending.delete(message.response?.id || message.id);
         }
         break;

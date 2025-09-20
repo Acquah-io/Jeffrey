@@ -132,8 +132,10 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
 
   appendHistory(state, { role: 'user', content: questionText, name: speakerName, userId });
 
-  let answerText = '';
-  let audioBuffer = null;
+  const defaultReply = 'I’m not sure how to answer that right now, but I’ll keep learning!';
+  let audioStream = null;
+  let finalTextPromise;
+
   try {
     const realtime = getRealtimeClient(guild.id);
     const historyText = getHistorySearchSeed(state);
@@ -143,36 +145,50 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
       historyText ? `Recent conversation:\n${historyText}` : null,
       `${speakerName}: ${questionText}`
     ].filter(Boolean).join('\n\n');
-    const { text, audio } = await realtime.sendUserMessage({
+
+    const { audioStream: stream, textPromise } = await realtime.sendUserMessage({
       text: realtimePrompt,
       clientState: {
         recent_history: state.history,
       },
     });
-    answerText = text || '';
-    audioBuffer = audio || null;
-  } catch (err) {
-    console.error('Realtime response failed, falling back to chat completion:', err);
-  }
 
-  if (!answerText) {
-    try {
-      const completion = await openai.chat.completions.create({
-        model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
-        temperature: 0.4,
-        messages,
-        max_tokens: 250,
+    audioStream = stream || null;
+    finalTextPromise = textPromise
+      .then(text => text || defaultReply)
+      .catch(err => {
+        console.error('Realtime text failed:', err);
+        return defaultReply;
+      })
+      .then(text => {
+        const trimmed = text.slice(0, MAX_RESPONSE_CHARS);
+        appendHistory(state, { role: 'assistant', content: trimmed });
+        return trimmed;
       });
-      answerText = completion?.choices?.[0]?.message?.content || '';
-    } catch (fallbackErr) {
-      console.error('Fallback completion failed:', fallbackErr);
-    }
+  } catch (err) {
+    console.error('Realtime response failed:', err);
+    finalTextPromise = (async () => {
+      try {
+        const completion = await openai.chat.completions.create({
+          model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
+          temperature: 0.4,
+          messages,
+          max_tokens: 250,
+        });
+        const text = completion?.choices?.[0]?.message?.content || defaultReply;
+        const trimmed = text.slice(0, MAX_RESPONSE_CHARS);
+        appendHistory(state, { role: 'assistant', content: trimmed });
+        return trimmed;
+      } catch (fallbackErr) {
+        console.error('Fallback completion failed:', fallbackErr);
+        appendHistory(state, { role: 'assistant', content: defaultReply });
+        return defaultReply;
+      }
+    })();
+    audioStream = null;
   }
 
-  const trimmed = (answerText || 'I’m not sure how to answer that right now, but I’ll keep learning!').slice(0, MAX_RESPONSE_CHARS);
-  appendHistory(state, { role: 'assistant', content: trimmed });
-
-  return { text: trimmed, audio: audioBuffer };
+  return { textPromise: finalTextPromise, audioStream, fallbackText: defaultReply };
 }
 
 function ensureState(guildId) {
@@ -208,26 +224,28 @@ async function playNext(state) {
     return;
   }
   const item = state.queue.shift();
-  const payload = typeof item === 'string' ? { text: item, audio: null } : (item || {});
-  const text = payload.text || '';
-  const audioBuffer = payload.audio;
+  const payload = typeof item === 'string'
+    ? { textPromise: Promise.resolve(item), fallbackText: item }
+    : (item || {});
+  const audioStream = payload.audioStream;
+  const fallbackText = payload.fallbackText || 'Let me think about that and get back to you shortly.';
+  const textPromise = payload.textPromise || Promise.resolve(fallbackText);
   try {
     let opusStream;
-    if (audioBuffer && audioBuffer.length) {
-      const source = new PassThrough();
-      source.end(audioBuffer);
+    if (audioStream) {
       const ffmpeg = new prism.FFmpeg({
         args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
       });
-      const pcm = source.pipe(ffmpeg);
+      const pcm = audioStream.pipe(ffmpeg);
       const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
       opusStream = pcm.pipe(opus);
     } else {
-      const fallbackText = text || 'Let me think about that and get back to you shortly.';
+      const finalText = await textPromise.catch(() => fallbackText);
+      const ttsInput = finalText || fallbackText;
       const speech = await openai.audio.speech.create({
         model: process.env.JEFFREY_TTS_MODEL || 'gpt-4o-mini-tts',
         voice: process.env.JEFFREY_TTS_VOICE || 'alloy',
-        input: fallbackText,
+        input: ttsInput,
         format: 'ogg'
       });
       const arrayBuffer = await speech.arrayBuffer();
@@ -247,8 +265,20 @@ async function playNext(state) {
   } catch (err) {
     console.error('Failed to synthesise assistant speech:', err);
     state.playing = false;
-    if (state.queue.length) {
-      await playNext(state);
+    try {
+      const finalText = await textPromise.catch(() => fallbackText);
+      if (finalText) {
+        await enqueueSpeech(state, {
+          textPromise: Promise.resolve(finalText),
+          audioStream: null,
+          fallbackText: finalText,
+        });
+      }
+    } catch (innerErr) {
+      console.error('Fallback speech after failure also failed:', innerErr);
+      if (state.queue.length) {
+        await playNext(state);
+      }
     }
   }
 }
@@ -306,7 +336,9 @@ function createRecordingPipeline(connection, userId, channel) {
         userId,
       }).catch(err2 => {
         console.error('Assistant answer failed:', err2);
-        return { text: 'I ran into a problem while trying to answer that. Could you try again?', audio: null };
+        const msg = 'I ran into a problem while trying to answer that. Could you try again?';
+        appendHistory(state, { role: 'assistant', content: msg });
+        return { textPromise: Promise.resolve(msg), audioStream: null, fallbackText: msg };
       });
       await enqueueSpeech(state, answer);
     } catch (error) {
