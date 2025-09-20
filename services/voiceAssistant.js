@@ -16,7 +16,8 @@ const tmp = require('tmp');
 const { PassThrough, pipeline } = require('stream');
 const { promisify } = require('util');
 const OpenAI = require('openai');
-const summaries = require('./classSummaries');
+const knowledge = require('./knowledge');
+const { getRealtimeClient } = require('./openaiRealtime');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pipelineAsync = promisify(pipeline);
@@ -71,35 +72,116 @@ async function transcribeAudio(wavPath) {
   return response?.text?.trim();
 }
 
-async function buildAnswer(guild, questionText) {
-  const snippets = await summaries.searchKnowledge(guild.id, questionText, { limit: 3 }).catch(() => []);
-  const context = snippets.map((snip, idx) => {
-    const when = snip.created_at ? `<t:${Math.floor(new Date(snip.created_at).getTime() / 1000)}:f>` : 'Unknown date';
-    return `Snippet ${idx + 1} (${when}) – ${snip.title || 'Untitled'}\n${snip.summary || snip.content.slice(0, 240)}`;
-  }).join('\n\n');
+function appendHistory(state, entry) {
+  if (!state) return;
+  if (!state.history) state.history = [];
+  state.history.push(entry);
+  if (state.history.length > 12) {
+    state.history.splice(0, state.history.length - 12);
+  }
+}
+
+function getHistoryMessages(state) {
+  if (!state?.history?.length) return [];
+  return state.history.slice(-6).map(entry => {
+    if (entry.role === 'assistant') {
+      return { role: 'assistant', content: entry.content };
+    }
+    const label = entry.name || 'User';
+    return { role: 'user', content: `${label}: ${entry.content}` };
+  });
+}
+
+function getHistorySearchSeed(state) {
+  if (!state?.history?.length) return '';
+  return state.history
+    .slice(-6)
+    .map(entry => `${entry.role === 'assistant' ? 'Jeffrey' : (entry.name || 'User')}: ${entry.content}`)
+    .join(' ');
+}
+
+async function buildAnswer(guild, questionText, { state, channel, userId } = {}) {
+  const member = channel?.guild?.members?.cache?.get(userId);
+  const speakerName = member?.displayName || member?.user?.username || 'User';
+  const historyMessages = getHistoryMessages(state);
+  const searchSeed = [getHistorySearchSeed(state), questionText].filter(Boolean).join(' ').slice(-400);
+
+  const [knowledgeContext, chatContext, sessionContext] = await Promise.all([
+    knowledge.fetchKnowledgeContext(guild.id, searchSeed || questionText, { limit: 3 }),
+    knowledge.fetchGeneralChatContext(guild.id, searchSeed || questionText, { channelId: channel?.id }),
+    knowledge.fetchSessionContext(guild.id, searchSeed || questionText, { limit: 3 })
+  ]);
+
+  const contextMessages = [];
+  if (knowledgeContext) {
+    contextMessages.push({ role: 'system', content: `Knowledge entries (summarise in English):\n${knowledgeContext}` });
+  }
+  if (chatContext) {
+    contextMessages.push({ role: 'system', content: `Recent chat context (may include other languages; respond in English):\n${chatContext}` });
+  }
+  if (sessionContext) {
+    contextMessages.push({ role: 'system', content: `Session archives (respond in English):\n${sessionContext}` });
+  }
 
   const messages = [
-    { role: 'system', content: 'You are Jeffrey, a helpful classroom assistant. Answer succinctly (max 150 words) using the supplied knowledge snippets when relevant. If information is missing, say so politely.' },
-    context ? { role: 'system', content: `Knowledge snippets:\n${context}` } : null,
-    { role: 'user', content: questionText }
-  ].filter(Boolean);
+    { role: 'system', content: 'You are Jeffrey, a helpful classroom assistant. Answer succinctly (max 150 words). Always reply in English, even if the user speaks another language. If context is incomplete, explain what is missing politely.' },
+    ...contextMessages,
+    ...historyMessages,
+    { role: 'user', content: `${speakerName}: ${questionText}` }
+  ];
 
-  const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
-    temperature: 0.4,
-    messages,
-    max_tokens: 250,
-  });
+  appendHistory(state, { role: 'user', content: questionText, name: speakerName, userId });
 
-  const answer = completion?.choices?.[0]?.message?.content || 'I’m not sure how to answer that right now, but I’ll keep learning!';
-  return answer.slice(0, MAX_RESPONSE_CHARS);
+  let answerText = '';
+  let audioBuffer = null;
+  try {
+    const realtime = getRealtimeClient(guild.id);
+    const historyText = getHistorySearchSeed(state);
+    const contextText = contextMessages.map(m => m.content).join('\n\n');
+    const realtimePrompt = [
+      contextText ? `Context:\n${contextText}` : null,
+      historyText ? `Recent conversation:\n${historyText}` : null,
+      `${speakerName}: ${questionText}`
+    ].filter(Boolean).join('\n\n');
+    const { text, audio } = await realtime.sendUserMessage({
+      text: realtimePrompt,
+      clientState: {
+        recent_history: state.history,
+      },
+    });
+    answerText = text || '';
+    audioBuffer = audio || null;
+  } catch (err) {
+    console.error('Realtime response failed, falling back to chat completion:', err);
+  }
+
+  if (!answerText) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
+        temperature: 0.4,
+        messages,
+        max_tokens: 250,
+      });
+      answerText = completion?.choices?.[0]?.message?.content || '';
+    } catch (fallbackErr) {
+      console.error('Fallback completion failed:', fallbackErr);
+    }
+  }
+
+  const trimmed = (answerText || 'I’m not sure how to answer that right now, but I’ll keep learning!').slice(0, MAX_RESPONSE_CHARS);
+  appendHistory(state, { role: 'assistant', content: trimmed });
+
+  return { text: trimmed, audio: audioBuffer };
 }
 
 function ensureState(guildId) {
   if (!assistantState.has(guildId)) {
-    assistantState.set(guildId, {});
+    assistantState.set(guildId, { history: [] });
   }
-  return assistantState.get(guildId);
+  const state = assistantState.get(guildId);
+  if (!state.history) state.history = [];
+  return state;
 }
 
 function ensureAudioPlayer(state) {
@@ -125,24 +207,40 @@ async function playNext(state) {
     state.playing = false;
     return;
   }
-  const text = state.queue.shift();
+  const item = state.queue.shift();
+  const payload = typeof item === 'string' ? { text: item, audio: null } : (item || {});
+  const text = payload.text || '';
+  const audioBuffer = payload.audio;
   try {
-    const speech = await openai.audio.speech.create({
-      model: process.env.JEFFREY_TTS_MODEL || 'gpt-4o-mini-tts',
-      voice: process.env.JEFFREY_TTS_VOICE || 'alloy',
-      input: text,
-      format: 'ogg'
-    });
-    const arrayBuffer = await speech.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const source = new PassThrough();
-    source.end(buffer);
-    const ffmpeg = new prism.FFmpeg({
-      args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
-    });
-    const pcm = source.pipe(ffmpeg);
-    const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
-    const opusStream = pcm.pipe(opus);
+    let opusStream;
+    if (audioBuffer && audioBuffer.length) {
+      const source = new PassThrough();
+      source.end(audioBuffer);
+      const ffmpeg = new prism.FFmpeg({
+        args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
+      });
+      const pcm = source.pipe(ffmpeg);
+      const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
+      opusStream = pcm.pipe(opus);
+    } else {
+      const fallbackText = text || 'Let me think about that and get back to you shortly.';
+      const speech = await openai.audio.speech.create({
+        model: process.env.JEFFREY_TTS_MODEL || 'gpt-4o-mini-tts',
+        voice: process.env.JEFFREY_TTS_VOICE || 'alloy',
+        input: fallbackText,
+        format: 'ogg'
+      });
+      const arrayBuffer = await speech.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const source = new PassThrough();
+      source.end(buffer);
+      const ffmpeg = new prism.FFmpeg({
+        args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
+      });
+      const pcm = source.pipe(ffmpeg);
+      const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
+      opusStream = pcm.pipe(opus);
+    }
     const resource = createAudioResource(opusStream, { inputType: StreamType.Opus });
     state.playing = true;
     state.audioPlayer.play(resource);
@@ -155,10 +253,10 @@ async function playNext(state) {
   }
 }
 
-async function enqueueSpeech(state, text) {
-  if (!text) return;
+async function enqueueSpeech(state, payload) {
+  if (!payload) return;
   if (!state.queue) state.queue = [];
-  state.queue.push(text);
+  state.queue.push(payload);
   if (!state.playing) {
     await playNext(state);
   }
@@ -201,11 +299,15 @@ function createRecordingPipeline(connection, userId, channel) {
         return;
       }
 
-      const answer = await buildAnswer(channel.guild, transcript).catch(err2 => {
-        console.error('Assistant answer failed:', err2);
-        return 'I ran into a problem while trying to answer that. Could you try again?';
-      });
       const state = ensureState(channel.guild.id);
+      const answer = await buildAnswer(channel.guild, transcript, {
+        state,
+        channel,
+        userId,
+      }).catch(err2 => {
+        console.error('Assistant answer failed:', err2);
+        return { text: 'I ran into a problem while trying to answer that. Could you try again?', audio: null };
+      });
       await enqueueSpeech(state, answer);
     } catch (error) {
       console.error('Assistant processing error:', error);

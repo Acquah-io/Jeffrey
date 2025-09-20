@@ -56,7 +56,7 @@ module.exports = async function handleGeneralQuestion(message) {
       try {
         await message.channel.sendTyping();
         const locale = await preferredLocale({ userId: authorId, guildId, discordLocale: message.guild?.preferredLocale });
-        const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content });
+        const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content, channelId: message.channelId });
         const response = await getOpenAIResponse(prompt, 300, locale);
         await message.reply(response);
       } catch (fallbackErr) {
@@ -75,7 +75,7 @@ module.exports = async function handleGeneralQuestion(message) {
       const basePrompt = context
         ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${message.content}`
         : message.content;
-      const prompt = await augmentPrompt({ guildId, basePrompt, searchText: message.content });
+      const prompt = await augmentPrompt({ guildId, basePrompt, searchText: message.content, channelId: message.channelId });
       const response = await getOpenAIResponse(prompt, 300, locale);
       await thread.send(response);
     } catch (err) {
@@ -105,7 +105,7 @@ module.exports = async function handleGeneralQuestion(message) {
     const basePrompt = context
       ? `Using the conversation context below, answer the user's latest message. Resolve pronouns like "it" to the appropriate subject from context.\n\nContext:\n${context}\n\nLatest message: ${cleaned}`
       : cleaned;
-    const prompt = await augmentPrompt({ guildId: message.guildId, basePrompt, searchText: cleaned });
+    const prompt = await augmentPrompt({ guildId: message.guildId, basePrompt, searchText: cleaned, channelId: message.channelId });
     const response = await getOpenAIResponse(prompt, 300, locale);
     await message.channel.send(response);
     return;
@@ -141,7 +141,7 @@ module.exports = async function handleGeneralQuestion(message) {
         });
         try {
           const locale = await preferredLocale({ userId: interaction.user.id, guildId, discordLocale: interaction.locale || message.guild?.preferredLocale });
-          const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content });
+          const prompt = await augmentPrompt({ guildId, basePrompt: message.content, searchText: message.content, channelId: message.channelId });
           const response = await getOpenAIResponse(prompt, 300, locale);
           await interaction.user.send(response);
           await interaction.followUp({ content: "I've sent you a private response.", ephemeral: true });

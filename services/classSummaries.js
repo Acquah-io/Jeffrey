@@ -73,6 +73,20 @@ async function listSessions(guildId, { limit = 10, offset = 0 } = {}) {
   return rows;
 }
 
+async function listSessionsInRange(guildId, { start, end, limit = 5 } = {}) {
+  if (!start || !end) return [];
+  const { rows } = await db.query(SQL`
+    SELECT *
+      FROM voice_sessions
+     WHERE guild_id = $1
+       AND started_at >= $2
+       AND started_at <= $3
+     ORDER BY started_at ASC
+     LIMIT $4
+  `, [guildId, start, end, limit]);
+  return rows;
+}
+
 async function getSession(sessionId) {
   const { rows } = await db.query(SQL`
     SELECT * FROM voice_sessions WHERE id = $1
@@ -139,6 +153,7 @@ module.exports = {
   recordParticipantLeave,
   listSessions,
   getSession,
+  listSessionsInRange,
   getLatestSessionForChannel,
   recordDelivery,
   getDeliveries,

@@ -8,7 +8,7 @@ module.exports.getOpenAIResponse = async (userMessage, maxTokens = 1000, locale 
     max_tokens: maxTokens,
     temperature: 0.2,
     messages: [
-      { role: "system", content: `You are a general, friendly assistant who is knowledgeable about code. Be concise and clear. Respond in ${locale}.` },
+      { role: "system", content: `You are a general, friendly assistant who is knowledgeable about code. Be concise and clear. Respond in English only, regardless of the user's language or locale.` },
       { role: "user", content: userMessage }
     ]
   });

@@ -27,7 +27,7 @@ module.exports = async function handleDMResponse(message) {
     await message.channel.sendTyping();
     const guildId = await resolveGuildId(message);
     const basePrompt = `In less than 200 words respond to: ${message.content}`;
-    const prompt = await augmentPrompt({ guildId, basePrompt, searchText: message.content });
+    const prompt = await augmentPrompt({ guildId, basePrompt, searchText: message.content, channelId: message.channelId });
     const response = await getOpenAIResponse(prompt, 300);
     await message.channel.send(response);
   }

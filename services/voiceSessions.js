@@ -161,7 +161,7 @@ async function generateSummary(transcripts, { topic, date }) {
     model: process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini',
     temperature: 0.3,
     messages: [
-      { role: 'system', content: 'You are an assistant that writes concise meeting summaries for students.' },
+      { role: 'system', content: 'You are an assistant that writes concise meeting summaries for students. Always respond in English no matter the source language.' },
       { role: 'user', content: prompt }
     ]
   });
@@ -232,12 +232,23 @@ async function stopSession(guild, { reason, endedBy } = {}) {
   });
 
   if (summary || combined) {
+    const sessionDate = new Date(session.started_at || session.ended_at || Date.now());
+    const isoDate = sessionDate.toISOString();
+    const dateLabel = isoDate.split('T')[0];
+    const parts = [
+      `Session ID: ${session.id}`,
+      `Date: ${isoDate}`,
+      session.topic ? `Topic: ${session.topic}` : null,
+      summary ? `Summary:\n${summary}` : null,
+      combined ? `Transcript:\n${combined}` : null,
+    ].filter(Boolean);
+
     await summaries.storeKnowledgeSnippet({
       sessionId: session.id,
       guildId: session.guild_id,
-      title: session.topic || `Session ${session.id}`,
-      summary,
-      content: combined || summary || ''
+      title: `${session.topic || `Session ${session.id}`} – ${dateLabel}`,
+      summary: summary ? `Session on ${dateLabel}: ${summary}` : null,
+      content: parts.join('\n\n') || ''
     });
   }
 
