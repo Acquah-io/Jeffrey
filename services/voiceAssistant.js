@@ -13,7 +13,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const tmp = require('tmp');
-const { pipeline, PassThrough } = require('stream');
+const { PassThrough, pipeline } = require('stream');
 const { promisify } = require('util');
 const OpenAI = require('openai');
 const summaries = require('./classSummaries');
@@ -135,9 +135,15 @@ async function playNext(state) {
     });
     const arrayBuffer = await speech.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const stream = new PassThrough();
-    stream.end(buffer);
-    const resource = createAudioResource(stream, { inputType: StreamType.OggOpus });
+    const source = new PassThrough();
+    source.end(buffer);
+    const ffmpeg = new prism.FFmpeg({
+      args: ['-analyzeduration', '0', '-loglevel', '0', '-i', 'pipe:0', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', String(CHANNELS)]
+    });
+    const pcm = source.pipe(ffmpeg);
+    const opus = new prism.opus.Encoder({ rate: SAMPLE_RATE, channels: CHANNELS, frameSize: 960 });
+    const opusStream = pcm.pipe(opus);
+    const resource = createAudioResource(opusStream, { inputType: StreamType.Opus });
     state.playing = true;
     state.audioPlayer.play(resource);
   } catch (err) {
