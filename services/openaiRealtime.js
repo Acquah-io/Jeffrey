@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime';
 const DEFAULT_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-09-12';
 const DEFAULT_VOICE = process.env.JEFFREY_REALTIME_VOICE || 'alloy';
+const RESPONSE_TIMEOUT_MS = Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000);
 
 class OpenAIRealtimeClient extends EventEmitter {
   constructor({ guildId, model = DEFAULT_MODEL, voice = DEFAULT_VOICE } = {}) {
@@ -100,12 +101,28 @@ class OpenAIRealtimeClient extends EventEmitter {
 
     const responseId = uuidv4();
     const resultPromise = new Promise((resolve, reject) => {
-      this.pending.set(responseId, {
-        resolve,
-        reject,
+      const entry = {
         text: '',
         audioChunks: [],
-      });
+        resolve: null,
+        reject: null,
+        timeout: null,
+      };
+      entry.resolve = (value) => {
+        if (entry.timeout) clearTimeout(entry.timeout);
+        resolve(value);
+      };
+      entry.reject = (err) => {
+        if (entry.timeout) clearTimeout(entry.timeout);
+        reject(err);
+      };
+      entry.timeout = setTimeout(() => {
+        if (this.pending.has(responseId)) {
+          entry.reject(new Error('Realtime response timeout'));
+          this.pending.delete(responseId);
+        }
+      }, RESPONSE_TIMEOUT_MS);
+      this.pending.set(responseId, entry);
     });
 
     this.send({
@@ -187,6 +204,10 @@ class OpenAIRealtimeClient extends EventEmitter {
         break;
       }
       default:
+        // Helpful for debugging unexpected events
+        if (process.env.JEFFREY_DEBUG_REALTIME === '1') {
+          console.debug('[Realtime] Unhandled message type:', type);
+        }
         break;
     }
   }
