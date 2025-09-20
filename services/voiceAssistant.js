@@ -26,9 +26,17 @@ const SAMPLE_RATE = 48000;
 const CHANNELS = 2;
 const BIT_DEPTH = 16;
 const MAX_RESPONSE_CHARS = 900;
-const SILENCE_LEVEL_THRESHOLD = Number(process.env.JEFFREY_MIN_SIGNAL_LEVEL || 800);
+const SILENCE_LEVEL_THRESHOLD = Number(process.env.JEFFREY_MIN_SIGNAL_LEVEL || 200);
 const MIN_TRANSCRIPT_CHARS = 5;
-const MIN_ENGLISH_CONFIDENCE = 0.75;
+const MIN_ENGLISH_CONFIDENCE = Number(process.env.JEFFREY_MIN_ENGLISH_CONFIDENCE || 0.6);
+
+const DEBUG_VOICE = process.env.JEFFREY_DEBUG_VOICE === '1';
+
+function debugVoice(...args) {
+  if (DEBUG_VOICE) {
+    console.log('[VoiceAssistant]', ...args);
+  }
+}
 
 const assistantState = new Map(); // guildId -> { channelId, connection, tempDir, audioPlayer, queue, playing }
 const processingUsers = new Set();
@@ -58,6 +66,7 @@ function englishConfidence(text) {
   if (!text) return 0;
   const cleaned = text.replace(/[^A-Za-z\s']/g, '');
   const ratio = cleaned.length / text.length;
+  debugVoice('English confidence', { ratio, textSample: text.slice(0, 80) });
   return Number.isFinite(ratio) ? ratio : 0;
 }
 
@@ -388,6 +397,7 @@ function createRecordingPipeline(connection, userId, channel) {
         return;
       }
       const signalLevel = await computeSignalLevel(pcmPath);
+      debugVoice('Signal level', signalLevel, 'threshold', SILENCE_LEVEL_THRESHOLD);
       if (signalLevel < SILENCE_LEVEL_THRESHOLD) {
         dir.removeCallback();
         processingUsers.delete(`${channel.guild.id}:${userId}`);
@@ -403,7 +413,9 @@ function createRecordingPipeline(connection, userId, channel) {
         return;
       }
 
+      debugVoice('Transcript received', transcript.slice(0, 120));
       if (!isLikelyEnglish(transcript)) {
+        debugVoice('Transcript rejected (non-English)');
         const msg = 'I only understand spoken English right now. Could you please repeat that in English?';
         const state = ensureState(channel.guild.id);
         const member = channel.guild.members.cache.get(userId);

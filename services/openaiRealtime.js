@@ -23,23 +23,26 @@ class OpenAIRealtimeClient extends EventEmitter {
 
   async ensureConnection() {
     if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) return;
+
+    const waitForConnection = () => new Promise((resolve, reject) => {
+      const onReady = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (err) => {
+        cleanup();
+        reject(err);
+      };
+      const cleanup = () => {
+        this.off('connected', onReady);
+        this.off('error', onError);
+      };
+      this.on('connected', onReady);
+      this.on('error', onError);
+    });
+
     if (this.connecting) {
-      await new Promise((resolve, reject) => {
-        const onReady = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = (err) => {
-          cleanup();
-          reject(err);
-        };
-        const cleanup = () => {
-          this.off('connected', onReady);
-          this.off('error', onError);
-        };
-        this.on('connected', onReady);
-        this.on('error', onError);
-      });
+      await waitForConnection();
       return;
     }
 
@@ -91,6 +94,8 @@ class OpenAIRealtimeClient extends EventEmitter {
     this.ws.on('error', (err) => {
       this.emit('error', err);
     });
+
+    await waitForConnection();
   }
 
   send(message) {
