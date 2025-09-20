@@ -136,7 +136,7 @@ async function playNext(state) {
     });
     const arrayBuffer = await speech.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const stream = Readable.from([buffer]);
+    const stream = Readable.from(buffer);
     const { stream: probedStream, type } = await demuxProbe(stream);
     const resource = createAudioResource(probedStream, { inputType: type });
     state.playing = true;
