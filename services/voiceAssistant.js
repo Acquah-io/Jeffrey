@@ -29,6 +29,7 @@ const MAX_RESPONSE_CHARS = 900;
 const SILENCE_LEVEL_THRESHOLD = Number(process.env.JEFFREY_MIN_SIGNAL_LEVEL || 200);
 const MIN_TRANSCRIPT_CHARS = 5;
 const MIN_ENGLISH_CONFIDENCE = Number(process.env.JEFFREY_MIN_ENGLISH_CONFIDENCE || 0.6);
+const REWRITE_CONFIDENCE_THRESHOLD = Number(process.env.JEFFREY_REWRITE_CONFIDENCE || 0.35);
 
 const DEBUG_VOICE = process.env.JEFFREY_DEBUG_VOICE === '1';
 
@@ -225,7 +226,14 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
     audioStream = stream || null;
     finalTextPromise = textPromise
       .then(text => text || defaultReply)
-      .then(text => ensureEnglishReply(text, { questionText, fallback: defaultReply }))
+      .then(async text => {
+        const score = englishConfidence(text);
+        debugVoice('Realtime reply confidence', score);
+        if (score < REWRITE_CONFIDENCE_THRESHOLD) {
+          return ensureEnglishReply(text, { questionText, fallback: defaultReply });
+        }
+        return text;
+      })
       .catch(err => {
         console.error('Realtime text failed:', err);
         return defaultReply;
@@ -246,7 +254,11 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
           max_tokens: 250,
         });
         const text = completion?.choices?.[0]?.message?.content || defaultReply;
-        const english = await ensureEnglishReply(text, { questionText, fallback: defaultReply });
+        const score = englishConfidence(text);
+        debugVoice('Fallback reply confidence', score);
+        const english = score < REWRITE_CONFIDENCE_THRESHOLD
+          ? await ensureEnglishReply(text, { questionText, fallback: defaultReply })
+          : text;
         const trimmed = english.slice(0, MAX_RESPONSE_CHARS);
         appendHistory(state, { role: 'assistant', content: trimmed });
         return trimmed;

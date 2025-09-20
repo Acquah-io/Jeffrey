@@ -7,6 +7,7 @@ const REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime';
 const DEFAULT_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-latest';
 const DEFAULT_VOICE = process.env.JEFFREY_REALTIME_VOICE || 'alloy';
 const RESPONSE_TIMEOUT_MS = Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000);
+const PING_INTERVAL_MS = Number(process.env.JEFFREY_REALTIME_PING_MS || 20000);
 
 class OpenAIRealtimeClient extends EventEmitter {
   constructor({ guildId, model = DEFAULT_MODEL, voice = DEFAULT_VOICE } = {}) {
@@ -19,6 +20,7 @@ class OpenAIRealtimeClient extends EventEmitter {
     this.connected = false;
     this.connecting = false;
     this.instructions = process.env.JEFFREY_REALTIME_INSTRUCTIONS || 'You are Jeffrey, a helpful classroom assistant. Always respond in English. Keep answers concise and conversational.';
+    this.pingInterval = null;
   }
 
   async ensureConnection() {
@@ -65,6 +67,18 @@ class OpenAIRealtimeClient extends EventEmitter {
           voice: this.voice,
         },
       });
+      if (PING_INTERVAL_MS > 0) {
+        if (this.pingInterval) clearInterval(this.pingInterval);
+        this.pingInterval = setInterval(() => {
+          try {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              this.ws.ping();
+            }
+          } catch (err) {
+            this.emit('error', err);
+          }
+        }, PING_INTERVAL_MS);
+      }
       this.emit('connected');
     });
 
@@ -81,11 +95,16 @@ class OpenAIRealtimeClient extends EventEmitter {
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
       this.pending.forEach((entry) => {
         const err = new Error('Realtime connection closed');
         entry.initialReject(err);
         entry.finalReject(err);
         if (entry.timeout) clearTimeout(entry.timeout);
+        if (entry.finalTimeout) clearTimeout(entry.finalTimeout);
       });
       this.pending.clear();
       this.emit('disconnected');
