@@ -1,4 +1,4 @@
-const { Colors } = require("discord.js");
+const { Colors, PermissionsBitField } = require("discord.js");
 const { config } = require('./config');
 
 module.exports = async function ensureRolesForGuild(guild) {
@@ -6,8 +6,14 @@ module.exports = async function ensureRolesForGuild(guild) {
 
   let staffRole = guild.roles.cache.find(role => role.name === "Staff") || null;
   let studentRole = guild.roles.cache.find(role => role.name === "Students") || null;
+  const me = guild.members.me;
+  const canManageRoles = Boolean(me && me.permissions.has(PermissionsBitField.Flags.ManageRoles));
 
-  if (config.features.autoCreateCoreRoles) {
+  if (!canManageRoles) {
+    console.warn(`Missing Manage Roles in ${guild.name}. Skipping automatic role provisioning.`);
+  }
+
+  if (config.features.autoCreateCoreRoles && canManageRoles) {
     if (!staffRole) {
       try {
         staffRole = await guild.roles.create({
@@ -37,12 +43,12 @@ module.exports = async function ensureRolesForGuild(guild) {
     } else {
       console.log("Students role already exists.");
     }
-  } else if (!staffRole || !studentRole) {
+  } else if ((!staffRole || !studentRole) && config.features.autoCreateCoreRoles) {
     console.log('Auto role creation is disabled. Existing roles were not modified.');
   }
 
-  if (!config.features.autoAssignStudents || !studentRole) {
-    return { staffRole, studentRole };
+  if (!config.features.autoAssignStudents || !studentRole || !canManageRoles) {
+    return { staffRole, studentRole, canManageRoles };
   }
 
   // Assign Students role to any unassigned users (excluding bots)
@@ -66,5 +72,5 @@ module.exports = async function ensureRolesForGuild(guild) {
   } catch (error) {
     console.error("Error fetching guild members:", error);
   }
-  return { staffRole, studentRole };
+  return { staffRole, studentRole, canManageRoles };
 };

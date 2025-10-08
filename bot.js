@@ -84,8 +84,8 @@ async function findInstallerForGuild(guild) {
   return null;
 }
 
-async function ensureInstallerHasStaff(guild, { staffRole, studentRole }) {
-  if (!guild || !staffRole) return null;
+async function ensureInstallerHasStaff(guild, { staffRole, studentRole, canManageRoles }) {
+  if (!guild || !staffRole || !canManageRoles) return null;
   const installer = await findInstallerForGuild(guild);
   if (!installer) return null;
 
@@ -535,10 +535,14 @@ client.once('ready', async () => {
     // For each guild the bot is in, ensure roles and refresh channels
     for (const [_, guild] of client.guilds.cache) {
         const roles = await ensureRolesForGuild(guild);
-        const { staffRole, studentRole } = roles;
+        const { staffRole, studentRole, canManageRoles } = roles;
         const installerMember = await ensureInstallerHasStaff(guild, roles);
 
-        if (config.features.autoAssignStudents) {
+        if (config.features.autoAssignStudents && !canManageRoles) {
+          console.warn(`Cannot auto-assign Students in ${guild.name}; missing Manage Roles permission.`);
+        }
+
+        if (config.features.autoAssignStudents && canManageRoles) {
           // Ensure the bot has Staff privileges (and never Students)
           try {
             const botMember = guild.members.me;
@@ -589,10 +593,14 @@ client.once('ready', async () => {
 client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
     const roles = await ensureRolesForGuild(guild);
-    const { staffRole, studentRole } = roles;
+    const { staffRole, studentRole, canManageRoles } = roles;
     const installerMember = await ensureInstallerHasStaff(guild, roles);
 
-    if (config.features.autoAssignStudents) {
+    if (config.features.autoAssignStudents && !canManageRoles) {
+        console.warn(`Cannot auto-assign Students in ${guild.name}; missing Manage Roles permission.`);
+    }
+
+    if (config.features.autoAssignStudents && canManageRoles) {
         try {
             const botMember = guild.members.me;
             if (botMember) {
@@ -674,6 +682,12 @@ client.on('guildMemberAdd', async (member) => {
         return;
     }
 
+    const me = member.guild.members.me;
+    if (!me || !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        console.warn(`Cannot auto-assign Students in ${member.guild.name}; missing Manage Roles permission.`);
+        return;
+    }
+
     await assignRolesToMember(member);
 
     // Now ensure that if the member is a student, the student channels are created/updated
@@ -694,8 +708,10 @@ async function ensureStudentQueueChannel(guild) {
 
         // Find the Students role and ensure it exists
         let studentRole = guild.roles.cache.find(role => role.name.toLowerCase() === 'students');
+        const me = guild.members.me;
+        const canManageRoles = Boolean(me && me.permissions.has(PermissionFlagsBits.ManageRoles));
         if (!studentRole) {
-            if (!config.features.autoCreateCoreRoles) {
+            if (!config.features.autoCreateCoreRoles || !canManageRoles) {
                 console.warn(`Students role not found in ${guild.name}. Skipping student queue permission setup.`);
                 return null;
             }
@@ -1147,6 +1163,8 @@ client.on('interactionCreate', async (interaction) => {
     if ((interaction.isButton() && interaction.customId.startsWith('study-')) || interaction.isModalSubmit()) {
       // handled in dedicated blocks below
     } else try {
+        const customId = interaction.customId;
+        const guild = interaction.guild;
         // // Defer the reply to avoid timeout errors and allow time to respond later
         // await interaction.deferReply({ ephemeral: true });
 
@@ -1159,14 +1177,41 @@ client.on('interactionCreate', async (interaction) => {
                   }
                   await interaction.deferReply({ ephemeral: true });
                   const warnings = [];
-                  try { await ensureRolesForGuild(guild); } catch (e) { console.warn('ensureRolesForGuild:', e.message); warnings.push('roles'); }
+                  let roleResult;
+                  try {
+                    roleResult = await ensureRolesForGuild(guild);
+                    if (roleResult && roleResult.canManageRoles === false) warnings.push('manage-roles-permission');
+                  } catch (e) {
+                    console.warn('ensureRolesForGuild:', e.message);
+                    warnings.push('roles');
+                  }
                   try { await setupDocumentationChannels(guild); } catch (e) { console.warn('setupDocumentationChannels:', e.message); warnings.push('docs'); }
                   try { await ensureStudentQueueChannel(guild); } catch (e) { console.warn('ensureStudentQueueChannel:', e.message); warnings.push('student-queues'); }
                   try { await ensureStaffQueueChannel(guild); } catch (e) { console.warn('ensureStaffQueueChannel:', e.message); warnings.push('staff-queues'); }
                   try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('ensureSettingsForGuild:', e.message); warnings.push('study-tip-settings'); }
                   try { await checkGuildPermissions(guild); } catch (e) { console.warn('checkGuildPermissions:', e.message); warnings.push('permissions'); }
-                  const msg = warnings.length
-                    ? `✅ Setup finished with warnings: ${warnings.join(', ')}.`
+                  const warningTexts = warnings.map(code => {
+                    switch (code) {
+                      case 'manage-roles-permission':
+                        return 'Grant the bot Manage Roles so it can create/assign Staff and Students automatically.';
+                      case 'roles':
+                        return 'Role provisioning encountered an error (see logs).';
+                      case 'docs':
+                        return 'Documentation channels could not be created/updated.';
+                      case 'student-queues':
+                        return 'Student queue channel could not be created/updated.';
+                      case 'staff-queues':
+                        return 'Staff queue channel could not be created/updated.';
+                      case 'study-tip-settings':
+                        return 'Study tips settings table could not be ensured.';
+                      case 'permissions':
+                        return 'The bot is still missing required permissions.';
+                      default:
+                        return code;
+                    }
+                  });
+                  const msg = warningTexts.length
+                    ? `✅ Setup finished with warnings:\n- ${warningTexts.join('\n- ')}`
                     : '✅ Setup complete.';
                   await interaction.editReply(msg);
                 } catch (e) {

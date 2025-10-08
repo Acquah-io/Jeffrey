@@ -1,3 +1,4 @@
+const { PermissionsBitField } = require('discord.js');
 const { config } = require('./config');
 
 module.exports = async function assignRoles(member) {
@@ -7,6 +8,12 @@ module.exports = async function assignRoles(member) {
 
   const guild = member.guild;
   console.log(`Assigning roles for: ${member.user.tag}`);
+
+  const botMember = guild.members.me;
+  if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+    console.warn(`Cannot auto-assign Students in ${guild.name}; missing Manage Roles permission.`);
+    return;
+  }
 
   const staffRole = guild.roles.cache.find(role => role.name === "Staff");
   const studentRole = guild.roles.cache.find(role => role.name === "Students");
