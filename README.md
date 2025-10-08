@@ -20,8 +20,6 @@ The bot reads the `OPENAI_API_KEY` environment variable for OpenAI access.
 
 - `JEFFREY_AUTO_SETUP_ROLES=false` — keep Jeffrey from auto-creating the **Staff** and **Students** roles. Create them manually if you still want queue permissions.
 - `JEFFREY_AUTO_ASSIGN_STUDENTS=false` — disable automatic assignment of the **Students** role to every member. Recommended for public App Directory installs.
-- `JEFFREY_ENABLE_REALTIME=true` — enable the voice assistant. Requires `OPENAI_API_KEY` and access to a realtime-capable OpenAI model.
-- `JEFFREY_VOICE_AUTO_CHANNEL=false` — prevent Jeffrey from creating the default “Ask Jeffrey” voice channel automatically when realtime voice is enabled.
 - `JEFFREY_PREMIUM_DEV_MODE=1` — bypass Premium entitlement checks for local development only. Leave unset in production so `/smart_search` and other AI-powered tools stay paywalled.
 
 ## Heroku deployment

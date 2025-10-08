@@ -21,14 +21,6 @@ const config = {
   features: {
     autoCreateCoreRoles: parseBoolean(process.env.JEFFREY_AUTO_SETUP_ROLES, true),
     autoAssignStudents: parseBoolean(process.env.JEFFREY_AUTO_ASSIGN_STUDENTS, true),
-    enableRealtimeVoice: parseBoolean(process.env.JEFFREY_ENABLE_REALTIME, false),
-    autoCreateVoiceChannel: parseBoolean(process.env.JEFFREY_VOICE_AUTO_CHANNEL, true),
-  },
-  voice: {
-    channelName: process.env.JEFFREY_VOICE_CHANNEL_NAME || 'Ask Jeffrey',
-    voicePreset: process.env.JEFFREY_REALTIME_VOICE || 'alloy',
-    responseTimeoutMs: Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000),
-    pingIntervalMs: Number(process.env.JEFFREY_REALTIME_PING_MS || 20000),
   },
   premium: {
     devMode: parseBoolean(process.env.JEFFREY_PREMIUM_DEV_MODE, false),

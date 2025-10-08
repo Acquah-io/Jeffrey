@@ -39,7 +39,6 @@ const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
 const createEventFeature = require('./features/createEvents');
 const queueManager = require('./queueManager');
-const voiceAssistant = require('./services/voiceAssistant');
 const studyTips = require('./features/studyTips');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
 const { activeQueue } = queueManager;   // use the shared map from queueManager
@@ -247,7 +246,6 @@ async function refreshChannels(guild) {
     await setupDocumentationChannels(guild);
     // Also ensure the Study Tips settings channel/panel exists
     try { await studyTips._helpers.ensureSettingsForGuild(guild); } catch (e) { console.warn('Failed to ensure study-tip-settings:', e.message); }
-    try { await voiceAssistant.ensureAssistantChannel(guild); } catch (e) { console.warn('Failed to ensure voice assistant channel:', e.message); }
 }
 
 // Post-install permission health check with a re‑invite button
@@ -1454,12 +1452,6 @@ client.on('messageCreate', async (message) => {
       console.error('Live‑logging failed:', err);
     }
 });
-
-if (config.features.enableRealtimeVoice) {
-  client.on('voiceStateUpdate', async (oldState, newState) => {
-    await voiceAssistant.handleVoiceUpdate(oldState, newState);
-  });
-}
 
 /**
  * Ensure student channels exist whenever a student comes online.
