@@ -1,4 +1,5 @@
 const { REST } = require('discord.js');
+const { config } = require('./config');
 
 const {
   ACCESS_TOKEN_DISCORD,
@@ -21,6 +22,8 @@ function parseSkuList(s) {
 const userSkus = parseSkuList(PREMIUM_SKU_USER);
 const guildSkus = parseSkuList(PREMIUM_SKU_GUILD);
 const testGuildAllow = parseSkuList(process.env.PREMIUM_TEST_ALLOW_GUILD_IDS);
+const devMode = config.premium.devMode;
+const premiumConfigured = userSkus.length > 0 || guildSkus.length > 0;
 
 // simple in-memory caches to reduce API calls
 const cacheUser = new Map(); // key: userId -> { at, ok }
@@ -47,8 +50,8 @@ async function fetchEntitlements(params) {
 }
 
 async function hasUserEntitlement(userId) {
-  // If no SKUs configured, allow all users (free mode)
-  if (!userSkus.length) return true;
+  if (devMode) return true;
+  if (!userSkus.length) return false;
   const now = Date.now();
   const hit = cacheUser.get(userId);
   if (hit && now - hit.at < TTL_MS) return hit.ok;
@@ -59,9 +62,9 @@ async function hasUserEntitlement(userId) {
 }
 
 async function hasGuildEntitlement(guildId) {
-  // If no SKUs configured, allow all guilds (free mode)
+  if (devMode) return true;
   if (testGuildAllow.includes(String(guildId))) return true; // explicit whitelist for testing
-  if (!guildSkus.length) return true;
+  if (!guildSkus.length) return false;
   const now = Date.now();
   const hit = cacheGuild.get(guildId);
   if (hit && now - hit.at < TTL_MS) return hit.ok;
@@ -76,7 +79,11 @@ function isWhitelistedGuild(guildId) {
 }
 
 async function hasPremiumAccess({ userId, guildId, client } = {}) {
+  if (devMode) return true;
+
   if (guildId && isWhitelistedGuild(guildId)) return true;
+
+  if (!premiumConfigured) return false;
 
   if (guildId) {
     const guildOk = await hasGuildEntitlement(guildId);

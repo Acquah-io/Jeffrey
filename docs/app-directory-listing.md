@@ -47,4 +47,4 @@ Website: https://github.com/charlesacquah-davis/Jeffrey
 1. Invite Jeffrey using the provided link.
 2. The bot will create “Students” and “Staff” roles and set up queue and docs channels automatically.
 3. Configure database connection and (optionally) enable history backfill.
-4. Subscribe to unlock Premium features.
+4. Subscribe to unlock Premium features. AI-powered commands remain disabled until a valid Premium entitlement is detected.

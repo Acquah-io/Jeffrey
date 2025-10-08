@@ -30,6 +30,9 @@ const config = {
     responseTimeoutMs: Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000),
     pingIntervalMs: Number(process.env.JEFFREY_REALTIME_PING_MS || 20000),
   },
+  premium: {
+    devMode: parseBoolean(process.env.JEFFREY_PREMIUM_DEV_MODE, false),
+  },
 };
 
 module.exports = {
