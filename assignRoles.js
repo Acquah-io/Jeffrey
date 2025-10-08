@@ -8,7 +8,14 @@ module.exports = async function assignRoles(member) {
   const guild = member.guild;
   console.log(`Assigning roles for: ${member.user.tag}`);
 
+  const staffRole = guild.roles.cache.find(role => role.name === "Staff");
   const studentRole = guild.roles.cache.find(role => role.name === "Students");
+
+  if (staffRole && member.roles.cache.has(staffRole.id)) {
+    console.log(`${member.user.tag} already has the Staff role. Skipping student assignment.`);
+    return;
+  }
+
   if (studentRole) {
     try {
       await member.roles.add(studentRole);

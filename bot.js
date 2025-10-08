@@ -1,5 +1,5 @@
 const {
-    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+    Client, GatewayIntentBits, Partials, ChannelType, REST, Routes, EmbedBuilder, PermissionsBitField, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent } = require('discord.js');
 require('dotenv').config();
 // Log – and don't crash – if any promise is rejected without a catch
 process.on('unhandledRejection', err => {
@@ -47,6 +47,67 @@ const { activeQueue } = queueManager;   // use the shared map from queueManager
 const clientDB = require('./database');
 const { ensureSchema } = require('./dbInit');
 const premium = require('./premium');
+
+async function findInstallerForGuild(guild) {
+  if (!guild) return null;
+  const clientUserId = guild.client?.user?.id;
+  if (!clientUserId) return null;
+
+  try {
+    const logs = await guild.fetchAuditLogs({ limit: 5, type: AuditLogEvent.BotAdd });
+    for (const entry of logs.entries.values()) {
+      if (entry?.target?.id !== clientUserId) continue;
+      const executorId = entry.executorId;
+      if (!executorId) continue;
+      try {
+        const member = await guild.members.fetch(executorId);
+        if (member && !member.user.bot) return member;
+      } catch (_) {
+        // Could not fetch executor member – continue to fallback
+      }
+    }
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`Unable to inspect audit logs for ${guild.name}:`, err.message || err);
+    }
+  }
+
+  try {
+    const owner = await guild.fetchOwner();
+    return owner && !owner.user.bot ? owner : null;
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`Unable to resolve owner for ${guild.name}:`, err.message || err);
+    }
+  }
+
+  return null;
+}
+
+async function ensureInstallerHasStaff(guild, { staffRole, studentRole }) {
+  if (!guild || !staffRole) return null;
+  const installer = await findInstallerForGuild(guild);
+  if (!installer) return null;
+
+  try {
+    if (!installer.roles.cache.has(staffRole.id)) {
+      await installer.roles.add(staffRole, 'Jeffrey installer promoted to Staff');
+      console.log(`Assigned 'Staff' role to ${installer.user.tag} in ${guild.name}.`);
+    }
+  } catch (err) {
+    console.warn(`Failed to assign 'Staff' role to ${installer.user?.tag || installer.id} in ${guild.name}:`, err.message || err);
+  }
+
+  if (studentRole && installer.roles.cache.has(studentRole.id)) {
+    try {
+      await installer.roles.remove(studentRole, 'Jeffrey installer should remain Staff only');
+    } catch (err) {
+      console.warn(`Failed to remove 'Students' role from ${installer.user?.tag || installer.id} in ${guild.name}:`, err.message || err);
+    }
+  }
+
+  return installer;
+}
 
 function buildRequiredPermissions() {
   const permissions = [
@@ -473,7 +534,9 @@ client.once('ready', async () => {
 
     // For each guild the bot is in, ensure roles and refresh channels
     for (const [_, guild] of client.guilds.cache) {
-        const { staffRole, studentRole } = await ensureRolesForGuild(guild);
+        const roles = await ensureRolesForGuild(guild);
+        const { staffRole, studentRole } = roles;
+        const installerMember = await ensureInstallerHasStaff(guild, roles);
 
         if (config.features.autoAssignStudents) {
           // Ensure the bot has Staff privileges (and never Students)
@@ -496,8 +559,10 @@ client.once('ready', async () => {
           if (studentRole) {
             // Sync roles for all *human* members (skip bots) so they get the Students role if applicable
             const allMembers = await guild.members.fetch();
+            const installerId = installerMember?.id;
             for (const member of allMembers.values()) {
               if (member.user.bot) continue;
+              if (installerId && member.id === installerId) continue;
               await assignRolesToMember(member);
             }
           } else {
@@ -523,7 +588,40 @@ client.once('ready', async () => {
  */
 client.on('guildCreate', async (guild) => {
     console.log(`Bot added to a new server: ${guild.name}`);
-    await ensureRolesForGuild(guild);
+    const roles = await ensureRolesForGuild(guild);
+    const { staffRole, studentRole } = roles;
+    const installerMember = await ensureInstallerHasStaff(guild, roles);
+
+    if (config.features.autoAssignStudents) {
+        try {
+            const botMember = guild.members.me;
+            if (botMember) {
+              if (studentRole && botMember.roles.cache.has(studentRole.id)) {
+                await botMember.roles.remove(studentRole);
+                console.log("Removed 'Students' role from bot.");
+              }
+              if (staffRole && !botMember.roles.cache.has(staffRole.id)) {
+                await botMember.roles.add(staffRole);
+                console.log("Assigned 'Staff' role to bot.");
+              }
+            }
+        } catch (err) {
+            console.error('Failed to enforce Staff role for bot on guildCreate:', err);
+        }
+
+        if (studentRole) {
+            const installerId = installerMember?.id;
+            const allMembers = await guild.members.fetch();
+            for (const member of allMembers.values()) {
+                if (member.user.bot) continue;
+                if (installerId && member.id === installerId) continue;
+                await assignRolesToMember(member);
+            }
+        } else {
+            console.warn(`Students role is missing in ${guild.name}. Automatic student assignment skipped.`);
+        }
+    }
+
     await setupDocumentationChannels(guild);
     await ensureStudentQueueChannel(guild);
     await ensureStaffQueueChannel(guild);
