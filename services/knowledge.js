@@ -1,6 +1,4 @@
-const chrono = require('chrono-node');
 const db = require('../database');
-const classSummaries = require('./classSummaries');
 
 const MAX_SNIPPET_LENGTH = 360;
 
@@ -30,43 +28,6 @@ function formatMessageRow(row) {
 
 function normaliseSearch(query) {
   return sanitizeText(query).replace(/[^\w\s'-]/g, ' ').trim();
-}
-
-function extractDateRange(text) {
-  if (!text) return null;
-
-  const absolute = text.match(/between (\d{4}-\d{2}-\d{2}) and (\d{4}-\d{2}-\d{2})/i);
-  if (absolute) {
-    const start = new Date(`${absolute[1]}T00:00:00Z`);
-    const end = new Date(`${absolute[2]}T23:59:59Z`);
-    return { start, end };
-  }
-
-  const parsed = chrono.parse(text)[0];
-  if (!parsed || !parsed.start) return null;
-
-  const start = parsed.start.date();
-  start.setHours(0, 0, 0, 0);
-  const end = parsed.end ? parsed.end.date() : new Date(start);
-  if (!parsed.end) end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
-async function fetchKnowledgeContext(guildId, query, { limit = 3 } = {}) {
-  if (!guildId || !query || query.length < 3) return '';
-  try {
-    const entries = await classSummaries.searchKnowledge(guildId, query, { limit });
-    if (!entries.length) return '';
-    return entries.map((entry, idx) => {
-      const when = discordTimestamp(entry.created_at);
-      const bodySource = sanitizeText(entry.summary) || sanitizeText(entry.content);
-      const body = truncate(bodySource, MAX_SNIPPET_LENGTH);
-      return `Entry ${idx + 1} (${when}) – ${entry.title || 'Untitled'}\n${body}`;
-    }).join('\n\n');
-  } catch (err) {
-    console.warn('fetchKnowledgeContext failed:', err.message);
-    return '';
-  }
 }
 
 async function fetchGeneralChatContext(guildId, query, { channelId, recentLimit = 6, searchLimit = 5, recentHours = 12 } = {}) {
@@ -135,78 +96,17 @@ async function fetchGeneralChatContext(guildId, query, { channelId, recentLimit 
   return sections.join('\n\n');
 }
 
-async function fetchSessionContext(guildId, query, { limit = 3 } = {}) {
-  if (!guildId || !query) return '';
-  const pieces = [];
-  const seen = new Set();
-
-  const addSession = (session) => {
-    if (!session || session.guild_id !== guildId || seen.has(session.id)) return;
-    seen.add(session.id);
-    const startedAt = session.started_at || session.ended_at;
-    const headerTs = discordTimestamp(startedAt);
-    const header = `Session ${session.id} (${session.topic || 'Untitled'}) – ${headerTs}`;
-    const summary = truncate(sanitizeText(session.summary));
-    const transcriptPreview = truncate(sanitizeText(session.transcript), 280);
-    const lines = [header];
-    if (summary) lines.push(`Summary: ${summary}`);
-    if (transcriptPreview) {
-      lines.push(`Transcript excerpt: ${transcriptPreview}`);
-    }
-    pieces.push(lines.join('\n'));
-  };
-
-  try {
-    const idMatch = query.match(/session\s*#?(\d+)/i);
-    if (idMatch) {
-      const session = await classSummaries.getSession(Number(idMatch[1]));
-      addSession(session);
-    }
-
-    const range = extractDateRange(query);
-    if (range?.start && range?.end) {
-      const sessions = await classSummaries.listSessionsInRange(guildId, {
-        start: range.start,
-        end: range.end,
-        limit,
-      });
-      sessions.forEach(addSession);
-    }
-  } catch (err) {
-    console.warn('fetchSessionContext failed:', err.message);
-  }
-
-  return pieces.join('\n\n');
-}
-
-async function augmentPrompt({ guildId, basePrompt, searchText, limit = 3, channelId }) {
-  const contexts = [];
-
-  const knowledge = await fetchKnowledgeContext(guildId, searchText || basePrompt, { limit });
-  if (knowledge) {
-    contexts.push(`Knowledge entries:\n${knowledge}`);
-  }
-
+async function augmentPrompt({ guildId, basePrompt, searchText, channelId }) {
   const chatContext = await fetchGeneralChatContext(guildId, searchText || basePrompt, {
     channelId,
   });
-  if (chatContext) {
-    contexts.push(`General chat context:\n${chatContext}`);
-  }
 
-  const sessionContext = await fetchSessionContext(guildId, searchText || basePrompt, { limit });
-  if (sessionContext) {
-    contexts.push(`Session archives:\n${sessionContext}`);
-  }
+  if (!chatContext) return `Respond in English only. ${basePrompt}`;
 
-  if (!contexts.length) return `Respond in English only. ${basePrompt}`;
-
-  return `Respond in English only. Use the context below when it helps answer the request. If the context is insufficient, explain what additional information is needed before answering.\n\n${contexts.join('\n\n')}\n\nUser question/context:\n${basePrompt}`;
+  return `Respond in English only. Use the context below when it helps answer the request. If the context is insufficient, explain what additional information is needed before answering.\n\nGeneral chat context:\n${chatContext}\n\nUser question/context:\n${basePrompt}`;
 }
 
 module.exports = {
-  fetchKnowledgeContext,
   fetchGeneralChatContext,
-  fetchSessionContext,
   augmentPrompt,
 };

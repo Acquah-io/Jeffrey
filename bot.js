@@ -28,6 +28,7 @@ const {
 const { ACCESS_TOKEN_DISCORD, CLIENT_ID } = process.env;
 const COMMAND_SCOPE = (process.env.COMMAND_SCOPE || 'guild').toLowerCase(); // 'guild' | 'global' | 'both'
 const BACKFILL_ON_START = (process.env.BACKFILL_ON_START || 'false').toLowerCase() === 'true';
+const { config } = require('./config');
 
 const ensureRolesForGuild = require('./ensureRoles.js');
 const assignRolesToMember = require('./assignRoles.js');
@@ -38,7 +39,6 @@ const handleDMResponse = require('./features/dmResponse');
 const handleGeneralQuestion = require('./features/generalQuestion');
 const createEventFeature = require('./features/createEvents');
 const queueManager = require('./queueManager');
-const voiceSessions = require('./services/voiceSessions');
 const voiceAssistant = require('./services/voiceAssistant');
 const studyTips = require('./features/studyTips');
 const { setupStudentQueueChannel, setupStaffQueueChannel } = queueManager;
@@ -47,6 +47,25 @@ const { activeQueue } = queueManager;   // use the shared map from queueManager
 const clientDB = require('./database');
 const { ensureSchema } = require('./dbInit');
 const premium = require('./premium');
+
+function buildRequiredPermissions() {
+  const permissions = [
+    PermissionsBitField.Flags.ViewChannel,
+    PermissionsBitField.Flags.ReadMessageHistory,
+    PermissionsBitField.Flags.SendMessages,
+    PermissionsBitField.Flags.EmbedLinks,
+    PermissionsBitField.Flags.AttachFiles,
+    PermissionsBitField.Flags.AddReactions,
+    PermissionsBitField.Flags.ManageMessages,
+    PermissionsBitField.Flags.ManageChannels,
+    PermissionsBitField.Flags.CreatePublicThreads,
+    PermissionsBitField.Flags.CreatePrivateThreads,
+  ];
+  if (config.features.autoCreateCoreRoles || config.features.autoAssignStudents) {
+    permissions.push(PermissionsBitField.Flags.ManageRoles);
+  }
+  return new PermissionsBitField(permissions);
+}
 
 /**
  * Backfill all past messages from a text channel into Postgres.
@@ -176,19 +195,7 @@ async function checkGuildPermissions(guild) {
     const me = guild.members.me;
     if (!me) return;
     if (me.permissions.has(PermissionsBitField.Flags.Administrator)) return;
-    const needed = new PermissionsBitField([
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.ReadMessageHistory,
-      PermissionsBitField.Flags.EmbedLinks,
-      PermissionsBitField.Flags.AttachFiles,
-      PermissionsBitField.Flags.AddReactions,
-      PermissionsBitField.Flags.ManageMessages,
-      PermissionsBitField.Flags.ManageChannels,
-      PermissionsBitField.Flags.ManageRoles,
-      PermissionsBitField.Flags.CreatePublicThreads,
-      PermissionsBitField.Flags.CreatePrivateThreads,
-    ]);
+    const needed = buildRequiredPermissions();
     const missing = [];
     for (const [name, flag] of Object.entries(PermissionsBitField.Flags)) {
       if (!needed.has(flag)) continue;
@@ -399,19 +406,8 @@ client.once('ready', async () => {
           console.log('Skipping per‑guild registration (COMMAND_SCOPE=global).');
         }
         /* ---------- Auto‑generated invite link ---------- */
-        // Define the permissions your bot absolutely needs. 
-        // Adjust this list if you add/remove features later.
-        const requiredPerms = new PermissionsBitField([
-          PermissionsBitField.Flags.Administrator,          // NEW – ensures bot sees every channel
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.ReadMessageHistory,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ManageRoles,
-          PermissionsBitField.Flags.ManageChannels,
-          PermissionsBitField.Flags.EmbedLinks,
-          PermissionsBitField.Flags.AttachFiles,
-          PermissionsBitField.Flags.AddReactions
-        ]);
+        // Define the minimum permissions needed for Jeffrey’s features.
+        const requiredPerms = buildRequiredPermissions();
 
         const inviteUrl =
           `https://discord.com/api/oauth2/authorize` +
@@ -477,31 +473,38 @@ client.once('ready', async () => {
 
     // For each guild the bot is in, ensure roles and refresh channels
     for (const [_, guild] of client.guilds.cache) {
-        await ensureRolesForGuild(guild);
-        // Ensure the bot has Staff privileges (and never Students)
-        try {
-          const botMember   = guild.members.me;
-          const staffRole   = guild.roles.cache.find(r => r.name === 'Staff');
-          const studentRole = guild.roles.cache.find(r => r.name === 'Students');
-          if (botMember) {
-            if (studentRole && botMember.roles.cache.has(studentRole.id)) {
-              await botMember.roles.remove(studentRole);
-              console.log("Removed 'Students' role from bot.");
+        const { staffRole, studentRole } = await ensureRolesForGuild(guild);
+
+        if (config.features.autoAssignStudents) {
+          // Ensure the bot has Staff privileges (and never Students)
+          try {
+            const botMember = guild.members.me;
+            if (botMember) {
+              if (studentRole && botMember.roles.cache.has(studentRole.id)) {
+                await botMember.roles.remove(studentRole);
+                console.log("Removed 'Students' role from bot.");
+              }
+              if (staffRole && !botMember.roles.cache.has(staffRole.id)) {
+                await botMember.roles.add(staffRole);
+                console.log("Assigned 'Staff' role to bot.");
+              }
             }
-            if (staffRole && !botMember.roles.cache.has(staffRole.id)) {
-              await botMember.roles.add(staffRole);
-              console.log("Assigned 'Staff' role to bot.");
-            }
+          } catch (err) {
+            console.error('Failed to enforce Staff role for bot:', err);
           }
-        } catch (err) {
-          console.error('Failed to enforce Staff role for bot:', err);
+
+          if (studentRole) {
+            // Sync roles for all *human* members (skip bots) so they get the Students role if applicable
+            const allMembers = await guild.members.fetch();
+            for (const member of allMembers.values()) {
+              if (member.user.bot) continue;
+              await assignRolesToMember(member);
+            }
+          } else {
+            console.warn(`Students role is missing in ${guild.name}. Automatic student assignment skipped.`);
+          }
         }
-        // Sync roles for all *human* members (skip bots) so they get the Students role if applicable
-        const allMembers = await guild.members.fetch();
-        for (const member of allMembers.values()) {
-          if (member.user.bot) continue;
-          await assignRolesToMember(member);
-        }
+
         await refreshChannels(guild);
         await checkGuildPermissions(guild);
         // Backfill historical messages for this guild (optional)
@@ -569,22 +572,14 @@ client.on('guildMemberAdd', async (member) => {
         return; // Done handling bots
     }
 
-    await assignRolesToMember(member);
-
-    // Fetch the Students role from the guild
-    const studentRole = member.guild.roles.cache.find(role => role.name === 'Students');
-
-    // If the studentRole exists and the member doesn't already have it, assign it
-    if (studentRole && !member.roles.cache.has(studentRole.id)) {
-        try {
-            await member.roles.add(studentRole);
-            console.log(`Assigned 'Students' role to ${member.user.tag}`);
-        } catch (err) {
-            console.error(`Failed to assign 'Students' role to ${member.user.tag}:`, err);
-        }
+    if (!config.features.autoAssignStudents) {
+        return;
     }
 
+    await assignRolesToMember(member);
+
     // Now ensure that if the member is a student, the student channels are created/updated
+    const studentRole = member.guild.roles.cache.find(role => role.name === 'Students');
     if (studentRole && member.roles.cache.has(studentRole.id)) {
         await ensureStudentQueueChannel(member.guild);
         await updateDocumentationMessage(member.guild, 'channel_student_docs', await studentMessageFor(member.guild));
@@ -602,6 +597,10 @@ async function ensureStudentQueueChannel(guild) {
         // Find the Students role and ensure it exists
         let studentRole = guild.roles.cache.find(role => role.name.toLowerCase() === 'students');
         if (!studentRole) {
+            if (!config.features.autoCreateCoreRoles) {
+                console.warn(`Students role not found in ${guild.name}. Skipping student queue permission setup.`);
+                return null;
+            }
             console.log(`Students role not found in ${guild.name}. Creating it...`);
             studentRole = await guild.roles.create({
                 name: 'Students',
@@ -1044,16 +1043,6 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    if ((interaction.isButton() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('class-summary-')) {
-      const classSession = interaction.client.commands.get('class_session');
-      if (classSession?.handleComponent) {
-        await classSession.handleComponent(interaction);
-      } else {
-        await interaction.reply({ content: 'This control is no longer active.', ephemeral: true });
-      }
-      return;
-    }
-
     console.log(`Button clicked: ${interaction.customId}`);
 
     // Skip queue handler for study‑tips buttons and modal submits
@@ -1323,10 +1312,11 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.on('voiceStateUpdate', async (oldState, newState) => {
-  await voiceSessions.handleVoiceUpdate(oldState, newState);
-  await voiceAssistant.handleVoiceUpdate(oldState, newState);
-});
+if (config.features.enableRealtimeVoice) {
+  client.on('voiceStateUpdate', async (oldState, newState) => {
+    await voiceAssistant.handleVoiceUpdate(oldState, newState);
+  });
+}
 
 /**
  * Ensure student channels exist whenever a student comes online.

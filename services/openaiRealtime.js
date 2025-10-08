@@ -3,11 +3,13 @@ const WebSocket = require('ws');
 const { PassThrough } = require('stream');
 const { v4: uuidv4 } = require('uuid');
 
+const { config } = require('../config');
+
 const REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime';
-const DEFAULT_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-latest';
-const DEFAULT_VOICE = process.env.JEFFREY_REALTIME_VOICE || 'alloy';
-const RESPONSE_TIMEOUT_MS = Number(process.env.JEFFREY_REALTIME_TIMEOUT_MS || 8000);
-const PING_INTERVAL_MS = Number(process.env.JEFFREY_REALTIME_PING_MS || 20000);
+const DEFAULT_MODEL = config.openAI.realtimeModel;
+const DEFAULT_VOICE = config.voice.voicePreset;
+const RESPONSE_TIMEOUT_MS = config.voice.responseTimeoutMs;
+const PING_INTERVAL_MS = config.voice.pingIntervalMs;
 
 class OpenAIRealtimeClient extends EventEmitter {
   constructor({ guildId, model = DEFAULT_MODEL, voice = DEFAULT_VOICE } = {}) {
@@ -50,8 +52,13 @@ class OpenAIRealtimeClient extends EventEmitter {
 
     this.connecting = true;
     const url = `${REALTIME_ENDPOINT}?model=${encodeURIComponent(this.model)}`;
+    const apiKey = config.openAI.apiKey;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is required to use realtime voice.');
+    }
+
     const headers = {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'OpenAI-Beta': 'realtime=v1',
     };
 

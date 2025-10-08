@@ -16,13 +16,20 @@ A Discord bot that uses OpenAI and Postgres.
 
 The bot reads the `OPENAI_API_KEY` environment variable for OpenAI access.
 
+### Optional feature toggles
+
+- `JEFFREY_AUTO_SETUP_ROLES=false` — keep Jeffrey from auto-creating the **Staff** and **Students** roles. Create them manually if you still want queue permissions.
+- `JEFFREY_AUTO_ASSIGN_STUDENTS=false` — disable automatic assignment of the **Students** role to every member. Recommended for public App Directory installs.
+- `JEFFREY_ENABLE_REALTIME=true` — enable the voice assistant. Requires `OPENAI_API_KEY` and access to a realtime-capable OpenAI model.
+- `JEFFREY_VOICE_AUTO_CHANNEL=false` — prevent Jeffrey from creating the default “Ask Jeffrey” voice channel automatically when realtime voice is enabled.
+
 ## Heroku deployment
 
 Heroku reads the `Procfile` and runs `npm start` continuously. Set the same environment variables in the Heroku dashboard and the bot will stay online as long as the dyno is running.
 
 ## App Directory + Payments
 
-- App Directory: Prepare your listing (description, icon, categories, commands, support server, privacy policy, terms) in the Discord Developer Portal. Keep requested permissions minimal; Administrator is simplest but consider narrowing to only what’s needed for listing.
+- App Directory: Prepare your listing (description, icon, categories, commands, support, privacy policy, terms) in the Discord Developer Portal. Grant the bot only the permissions it needs (view/send messages, manage channels, optional manage roles) instead of Administrator.
 - Payments (Premium Apps): Premium is required for AI features only; queues and events are free.
   - Env vars:
     - `PREMIUM_SKU_USER` (recommended): comma-separated SKU IDs for user‑level Premium (unlocks AI features: code review, Q&A, history).

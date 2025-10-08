@@ -1,3 +1,22 @@
+const { config } = require('../config');
+
+if (!config.features.enableRealtimeVoice) {
+  module.exports = {
+    ensureAssistantChannel: async () => null,
+    handleVoiceUpdate: () => {},
+  };
+  return;
+}
+
+if (!config.openAI.apiKey) {
+  console.warn('OPENAI_API_KEY is required for Jeffrey’s voice assistant. Skipping voice module initialisation.');
+  module.exports = {
+    ensureAssistantChannel: async () => null,
+    handleVoiceUpdate: () => {},
+  };
+  return;
+}
+
 const {
   joinVoiceChannel,
   EndBehaviorType,
@@ -15,11 +34,11 @@ const path = require('path');
 const tmp = require('tmp');
 const { PassThrough, pipeline } = require('stream');
 const { promisify } = require('util');
-const OpenAI = require('openai');
 const knowledge = require('./knowledge');
 const { getRealtimeClient } = require('./openaiRealtime');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: config.openAI.apiKey });
 const pipelineAsync = promisify(pipeline);
 
 const SAMPLE_RATE = 48000;
@@ -101,7 +120,7 @@ async function ensureEnglishReply(text, { questionText, fallback }) {
 }
 
 function targetChannelName() {
-  return (process.env.JEFFREY_ASSISTANT_CHANNEL_NAME || 'Ask Jeffrey').toLowerCase();
+  return config.voice.channelName.toLowerCase();
 }
 
 async function pcmToWav(pcmPath, wavPath) {
@@ -175,21 +194,11 @@ async function buildAnswer(guild, questionText, { state, channel, userId } = {})
   const historyMessages = getHistoryMessages(state);
   const searchSeed = [getHistorySearchSeed(state), questionText].filter(Boolean).join(' ').slice(-400);
 
-  const [knowledgeContext, chatContext, sessionContext] = await Promise.all([
-    knowledge.fetchKnowledgeContext(guild.id, searchSeed || questionText, { limit: 3 }),
-    knowledge.fetchGeneralChatContext(guild.id, searchSeed || questionText, { channelId: channel?.id }),
-    knowledge.fetchSessionContext(guild.id, searchSeed || questionText, { limit: 3 })
-  ]);
+  const chatContext = await knowledge.fetchGeneralChatContext(guild.id, searchSeed || questionText, { channelId: channel?.id });
 
   const contextMessages = [];
-  if (knowledgeContext) {
-    contextMessages.push({ role: 'system', content: `Knowledge entries (summarise in English):\n${knowledgeContext}` });
-  }
   if (chatContext) {
     contextMessages.push({ role: 'system', content: `Recent chat context (may include other languages; respond in English):\n${chatContext}` });
-  }
-  if (sessionContext) {
-    contextMessages.push({ role: 'system', content: `Session archives (respond in English):\n${sessionContext}` });
   }
 
   const messages = [
@@ -527,6 +536,10 @@ async function ensureAssistantChannel(guild) {
     }
   }
   if (!channel) {
+    if (!config.features.autoCreateVoiceChannel) {
+      console.warn(`Voice assistant channel '${desiredLabel}' is missing in ${guild.name}. Set JEFFREY_VOICE_AUTO_CHANNEL=1 to allow Jeffrey to create it automatically.`);
+      return null;
+    }
     channel = await guild.channels.create({
       name: desiredLabel,
       type: ChannelType.GuildVoice,

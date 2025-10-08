@@ -26,17 +26,18 @@ Message-based features:
 
 ## Permissions Rationale
 - View Channels, Read Message History, Send Messages — required to read/write channels and respond.
-- Manage Roles/Channels — used to create “Students/Staff” roles and manage queue channels and pinned panels.
+- Manage Channels — needed to create queue and documentation channels with the correct permissions.
+- Manage Roles — _optional_. Only required if you enable Jeffrey’s automatic Staff/Students role provisioning.
 - Add Reactions, Embed Links, Attach Files — for richer responses.
-Note: Administrator simplifies setup, but you can grant finer-grained permissions to the bot role if preferred.
+Jeffrey no longer requests the Administrator permission. Limit the bot role to the scopes above for new installs.
 
 ## Data Handling
 Jeffrey stores minimal message metadata (author, channel, timestamp, content) in your database to power history queries. No data is shared with third parties beyond the chosen AI provider for Premium responses.
 
-Privacy Policy: https://yourdomain.example/privacy
-Terms of Service: https://yourdomain.example/terms
-Support Server: https://discord.gg/your-support-invite
-Website: https://yourdomain.example
+Privacy Policy: https://github.com/charlesacquah-davis/Jeffrey/blob/main/docs/policies/privacy-policy.md
+Terms of Service: https://github.com/charlesacquah-davis/Jeffrey/blob/main/docs/policies/terms-of-service.md
+Support: https://github.com/charlesacquah-davis/Jeffrey/discussions
+Website: https://github.com/charlesacquah-davis/Jeffrey
 
 ## Pricing
 - Free: Queues, events, help.
@@ -47,4 +48,3 @@ Website: https://yourdomain.example
 2. The bot will create “Students” and “Staff” roles and set up queue and docs channels automatically.
 3. Configure database connection and (optionally) enable history backfill.
 4. Subscribe to unlock Premium features.
-

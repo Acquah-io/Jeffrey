@@ -1,8 +1,27 @@
 // features/openaiService.js
-const OpenAI = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { config } = require('../config');
+
+let openai = null;
+try {
+  if (config.openAI.apiKey) {
+    const OpenAI = require('openai');
+    openai = new OpenAI({ apiKey: config.openAI.apiKey });
+  } else {
+    console.warn('OPENAI_API_KEY is not set. AI-powered features will remain disabled until it is provided.');
+  }
+} catch (err) {
+  console.error('Failed to initialise OpenAI client:', err.message || err);
+  openai = null;
+}
+
+function ensureClient() {
+  if (!openai) {
+    throw new Error('OPENAI_API_KEY is missing or invalid. Set it to enable AI-powered responses.');
+  }
+}
 
 module.exports.getOpenAIResponse = async (userMessage, maxTokens = 1000, locale = 'en-US') => {
+  ensureClient();
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: maxTokens,
@@ -14,3 +33,5 @@ module.exports.getOpenAIResponse = async (userMessage, maxTokens = 1000, locale 
   });
   return completion.choices[0].message.content;
 };
+
+module.exports.isConfigured = () => Boolean(openai);

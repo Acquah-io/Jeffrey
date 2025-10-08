@@ -1,4 +1,10 @@
+const { config } = require('./config');
+
 module.exports = async function assignRoles(member) {
+  if (!config.features.autoAssignStudents) {
+    return;
+  }
+
   const guild = member.guild;
   console.log(`Assigning roles for: ${member.user.tag}`);
 
@@ -11,6 +17,6 @@ module.exports = async function assignRoles(member) {
       console.error(`Failed to assign Students role to ${member.user.tag}:`, error);
     }
   } else {
-    console.error("Students role not found!");
+    console.warn("Students role not found; skipping auto assignment.");
   }
 };
