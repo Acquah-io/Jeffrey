@@ -85,6 +85,22 @@ async function findInstallerForGuild(guild) {
   return null;
 }
 
+async function removeLegacyVoiceChannel(guild) {
+  if (!guild) return;
+  const legacyNames = ['ask jeffrey', 'ask-jeffrey', 'askjeffrey', 'jeffrey voice'];
+  const voiceChannel = guild.channels.cache.find(
+    ch => ch.type === ChannelType.GuildVoice && legacyNames.includes(ch.name.toLowerCase())
+  );
+  if (voiceChannel) {
+    try {
+      await voiceChannel.delete('Removing legacy Jeffrey voice assistant channel.');
+      console.log(`Removed legacy voice channel ${voiceChannel.name} in ${guild.name}.`);
+    } catch (err) {
+      console.warn(`Could not remove legacy voice channel in ${guild.name}:`, err.message || err);
+    }
+  }
+}
+
 async function ensureInstallerHasStaff(guild, { staffRole, studentRole, canManageRoles }) {
   if (!guild || !staffRole || !canManageRoles) return null;
   const installer = await findInstallerForGuild(guild);
@@ -537,6 +553,7 @@ client.once('ready', async () => {
         const roles = await ensureRolesForGuild(guild);
         const { staffRole, studentRole, canManageRoles } = roles;
         const installerMember = await ensureInstallerHasStaff(guild, roles);
+        await removeLegacyVoiceChannel(guild);
 
         if (config.features.autoAssignStudents && !canManageRoles) {
           console.warn(`Cannot auto-assign Students in ${guild.name}; missing Manage Roles permission.`);
@@ -595,6 +612,7 @@ client.on('guildCreate', async (guild) => {
     const roles = await ensureRolesForGuild(guild);
     const { staffRole, studentRole, canManageRoles } = roles;
     const installerMember = await ensureInstallerHasStaff(guild, roles);
+    await removeLegacyVoiceChannel(guild);
 
     if (config.features.autoAssignStudents && !canManageRoles) {
         console.warn(`Cannot auto-assign Students in ${guild.name}; missing Manage Roles permission.`);
