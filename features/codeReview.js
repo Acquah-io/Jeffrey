@@ -4,12 +4,61 @@ const { getOpenAIResponse } = require('./openaiService');
 const { preferredLocale } = require('../i18n');
 const premium = require('../premium');
 
+const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
+const INLINE_CODE_REGEX = /`([^`]+)`/g;
+
+function buildReviewPrompt(rawContent) {
+  if (!rawContent) return null;
+
+  const blockMatches = rawContent.match(CODE_BLOCK_REGEX);
+  let snippets = [];
+
+  if (blockMatches && blockMatches.length) {
+    snippets = blockMatches.map(block => block.trim()).filter(Boolean);
+  } else {
+    const inlineMatches = [];
+    let match;
+    while ((match = INLINE_CODE_REGEX.exec(rawContent)) !== null) {
+      const code = match[1]?.trim();
+      if (code) inlineMatches.push(code);
+    }
+    if (inlineMatches.length) {
+      snippets = inlineMatches.map(code => `\`\`\`\n${code}\n\`\`\``);
+    }
+  }
+
+  if (!snippets.length) return null;
+
+  let prompt = `Please review the following code snippet(s):\n\n${snippets.join('\n\n')}`;
+  const context = rawContent
+    .replace(CODE_BLOCK_REGEX, '')
+    .replace(/`[^`]+`/g, '')
+    .trim();
+  if (context) {
+    prompt += `\n\nAdditional context from the author:\n${context}`;
+  }
+  return prompt;
+}
+
 module.exports = async function handleCodeReview(message) {
+  let reviewPrompt = null;
+
   // If we’re already in a thread, only respond when the bot is mentioned
   if (message.channel.isThread()) {
     if (!message.mentions.has(message.client.user)) return;
+
+    const cleaned = message.content
+      .replaceAll(`<@${message.client.user.id}>`, '')
+      .trim();
+
+    reviewPrompt = buildReviewPrompt(cleaned || message.content);
+    if (!reviewPrompt) return;
+  } else {
+    reviewPrompt = buildReviewPrompt(message.content);
+    if (!reviewPrompt) return;
   }
-  if (message.content.startsWith('`') && message.content.endsWith('`') && message.guildId !== null) {
+
+  if (message.guildId !== null) {
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setLabel("Yes").setStyle(ButtonStyle.Primary).setCustomId("code_review_yes"),
       new ButtonBuilder().setLabel("No").setStyle(ButtonStyle.Danger).setCustomId("code_review_no")
@@ -37,7 +86,7 @@ module.exports = async function handleCodeReview(message) {
         await interaction.reply("Code review is being sent to you via DM.");
         await message.channel.sendTyping();
         const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-        const response = await getOpenAIResponse(`Please review the following code: ${message.content}` , 1000, locale);
+        const response = await getOpenAIResponse(reviewPrompt, 1000, locale);
         await message.author.send(response);
       } else if (interaction.customId === "code_review_no") {
         const ok = await premium.hasPremiumAccess({ userId: interaction.user.id, guildId: message.guildId });
@@ -57,11 +106,7 @@ module.exports = async function handleCodeReview(message) {
           try {
             await message.channel.sendTyping();
             const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-            const response = await getOpenAIResponse(
-              `Please review the following code: ${message.content}`,
-              1000,
-              locale
-            );
+            const response = await getOpenAIResponse(reviewPrompt, 1000, locale);
             await message.channel.send(response);
           } catch (err) {
             console.error('Failed to send code review in thread:', err);
@@ -90,11 +135,7 @@ module.exports = async function handleCodeReview(message) {
           try {
             await message.channel.sendTyping();
             const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-            const response = await getOpenAIResponse(
-              `Please review the following code: ${message.content}`,
-              1000,
-              locale
-            );
+            const response = await getOpenAIResponse(reviewPrompt, 1000, locale);
             await message.reply(response);
           } catch (e) {
             console.error('Fallback code review failed:', e);
@@ -109,11 +150,7 @@ module.exports = async function handleCodeReview(message) {
         try {
           await thread.sendTyping();
           const locale = await preferredLocale({ userId: interaction.user.id, guildId: interaction.guildId, discordLocale: interaction.locale });
-          const response = await getOpenAIResponse(
-            `Please review the following code: ${message.content}`,
-            1000,
-            locale
-          );
+          const response = await getOpenAIResponse(reviewPrompt, 1000, locale);
           await thread.send(response);
         } catch (err) {
           console.error('Failed to send code review:', err);
