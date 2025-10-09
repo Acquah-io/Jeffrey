@@ -221,7 +221,11 @@ async function setupStaffQueueChannel(staffChannel, includeBlacklist = false) {
           new ButtonBuilder()
             .setCustomId('create-queue')
             .setLabel('Create Queue')
-            .setStyle(ButtonStyle.Success)
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('delete-queue')
+            .setLabel(t(locale, 'queue.buttons.delete_queue'))
+            .setStyle(ButtonStyle.Danger)
         );
         let blacklistRow;
         if (includeBlacklist) {
@@ -334,6 +338,16 @@ async function updateQueue(queueId, newName, newDescription) {
     `, [newName, newDescription, queueId]);
   }
 
+/**
+ * Permanently delete a queue.
+ */
+async function deleteQueue(serverId, queueId) {
+    await pool.query(
+        `DELETE FROM queues WHERE server_id = $1 AND id = $2`,
+        [serverId, queueId]
+    );
+}
+
 /* ===== Blacklist helpers (queue_id‑based) ==================== */
 
 /**
@@ -406,6 +420,7 @@ module.exports = {
     listQueues,
     createQueue,
     updateQueue,
+    deleteQueue,
     listBlacklisted,
     blacklistUser,
     unblacklistUser,

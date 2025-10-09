@@ -20,7 +20,8 @@
       "blacklist": "Blacklist Users",
       "delete_user": "Delete User",
       "edit": "Edit queue",
-      "create": "Create Queue"
+      "create": "Create Queue",
+      "delete_queue": "Delete queue"
     }
   },
   "channels": {

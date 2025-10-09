@@ -22,7 +22,9 @@ const {
   handleBlacklistButton,
   handleDeleteUserButton,
   handleDeleteUserSelect,
-  handleCreateQueueButton
+  handleCreateQueueButton,
+  handleDeleteQueue,
+  handleDeleteQueueModal
 } = require('./queueOperations');
   
 const { ACCESS_TOKEN_DISCORD, CLIENT_ID } = process.env;
@@ -1136,13 +1138,17 @@ client.on('interactionCreate', async (interaction) => {
             if (!interaction.replied) {
                 await interaction.reply({ content: '❌ Failed to save the event.', ephemeral: true });
             }
-        }
-        return;
     }
-    if (interaction.isModalSubmit() && interaction.customId?.startsWith('edit-queue-modal-')) {
-        await handleEditQueueModal(interaction);
-        return;
-    }
+    return;
+}
+if (interaction.isModalSubmit() && interaction.customId?.startsWith('edit-queue-modal-')) {
+    await handleEditQueueModal(interaction);
+    return;
+}
+if (interaction.isModalSubmit() && interaction.customId?.startsWith('delete-queue-modal-')) {
+    await handleDeleteQueueModal(interaction);
+    return;
+}
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return;
 
@@ -1240,6 +1246,9 @@ client.on('interactionCreate', async (interaction) => {
                 break;
             case 'clear-queue':
                 await handleClearQueue(interaction);
+                break;
+            case 'delete-queue':
+                await handleDeleteQueue(interaction);
                 break;
             case 'blacklist-selector':
                 await handleBlacklistSelect(interaction);

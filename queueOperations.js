@@ -1,4 +1,4 @@
-const { getQueue, addStudent, removeStudent, studentActiveQueue, listQueues, listBlacklisted, createQueue, updateQueue, shuffleQueue, clearQueue, activeQueue, blacklistUser, unblacklistUser, isUserBlacklisted, setupStaffQueueChannel, setupStudentQueueChannel, buildBlacklistSelector, buildDeleteSelector, buildStaffQueueSelector } = require('./queueManager');
+const { getQueue, addStudent, removeStudent, studentActiveQueue, listQueues, listBlacklisted, createQueue, updateQueue, deleteQueue, shuffleQueue, clearQueue, activeQueue, blacklistUser, unblacklistUser, isUserBlacklisted, setupStaffQueueChannel, setupStudentQueueChannel, buildBlacklistSelector, buildDeleteSelector, buildStaffQueueSelector } = require('./queueManager');
 /**
  * When staff click “Delete User”, show a dropdown of current queue members.
  */
@@ -211,6 +211,82 @@ async function handleCreateQueueButton(interaction) {
   );
 
   await interaction.showModal(modal);
+}
+
+/**
+ * Show confirmation modal before deleting the active queue.
+ */
+async function handleDeleteQueue(interaction) {
+  const { PermissionFlagsBits } = require('discord.js');
+  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    return interaction.reply({ content: '⛔ Staff only.', ephemeral: true });
+  }
+
+  const serverId = interaction.guild.id;
+  const queueId = activeQueue.get(serverId);
+  if (!queueId) {
+    return interaction.reply({ content: '❗ Please select a queue first using the dropdown menu.', ephemeral: true });
+  }
+
+  const queues = await listQueues(serverId);
+  const queueObj = queues.find(q => String(q.id) === String(queueId));
+  if (!queueObj) {
+    return interaction.reply({ content: '❗ Queue not found.', ephemeral: true });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId(`delete-queue-modal-${queueId}`)
+    .setTitle('Delete Queue');
+
+  const confirmInput = new TextInputBuilder()
+    .setCustomId('delete-queue-confirm')
+    .setLabel(`Type "${queueObj.queue_name}" to confirm deletion`)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(confirmInput));
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle delete queue confirmation modal.
+ */
+async function handleDeleteQueueModal(interaction) {
+  const parts = interaction.customId.split('-');
+  const queueId = parts[parts.length - 1];
+  const serverId = interaction.guild.id;
+
+  const confirmation = interaction.fields.getTextInputValue('delete-queue-confirm').trim();
+
+  const queues = await listQueues(serverId);
+  const queueObj = queues.find(q => String(q.id) === String(queueId));
+  if (!queueObj) {
+    return interaction.reply({ content: '❗ Queue not found.', ephemeral: true });
+  }
+
+  if (confirmation.toLowerCase() !== queueObj.queue_name.trim().toLowerCase()) {
+    return interaction.reply({ content: `❗ Please type "${queueObj.queue_name}" to confirm deletion.`, ephemeral: true });
+  }
+
+  await deleteQueue(serverId, queueId);
+
+  if (activeQueue.get(serverId) === Number(queueId) || activeQueue.get(serverId) === queueId) {
+    activeQueue.delete(serverId);
+  }
+  for (const [key, value] of studentActiveQueue.entries()) {
+    if (value === String(queueId)) {
+      studentActiveQueue.delete(key);
+    }
+  }
+
+  await interaction.reply({ content: `🗑️ Queue **${queueObj.queue_name}** deleted.`, ephemeral: true });
+
+  await setupStaffQueueChannel(interaction.channel);
+  const { getChannelByKey } = require('./channels');
+  const studentChannel = getChannelByKey(interaction.guild, 'channel_student_queues');
+  if (studentChannel) {
+    await setupStudentQueueChannel(studentChannel);
+  }
 }
 
 /**
@@ -737,5 +813,7 @@ module.exports = {
     handleBlacklistButton,
     handleDeleteUserButton,
     handleDeleteUserSelect,
-    handleCreateQueueButton
+    handleCreateQueueButton,
+    handleDeleteQueue,
+    handleDeleteQueueModal
 };
