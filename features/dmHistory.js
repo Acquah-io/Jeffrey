@@ -408,6 +408,27 @@ async function messagesInChannelRange(msg, channelName, start, end) {
   return msg.reply(`Messages in **#${channelName}** between ${start.toISOString().slice(0,10)} and ${end.toISOString().slice(0,10)}:\n${out}`);
 }
 
+async function buildDmConversation(channel, latestMessage) {
+  try {
+    const fetched = await channel.messages.fetch({ limit: 20 });
+    const ordered = Array.from(fetched.values())
+      .filter(m => m.id !== latestMessage?.id)
+      .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+    const convo = [];
+    for (const msg of ordered) {
+      const text = (msg.content || '').trim();
+      if (!text) continue;
+      const isAssistant = Boolean(msg.author?.bot);
+      convo.push({ role: isAssistant ? 'assistant' : 'user', content: text });
+    }
+    return convo.slice(-10); // keep recent context
+  } catch (err) {
+    console.warn('Failed to build DM conversation context:', err.message || err);
+    return [];
+  }
+}
+
 /* ---------- DM router ---------- */
 async function handleDmMessage(msg) {
   const t = msg.content.trim();
@@ -510,12 +531,15 @@ async function handleDmMessage(msg) {
     return msg.reply(ans.choices[0].message.content);
   }
 
-  // small talk
+  // small talk / general chat with conversation memory
+  const conversation = await buildDmConversation(msg.channel, msg);
+  conversation.push({ role: 'user', content: t });
+
   const chat = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: "You are Jeffrey, a helpful assistant. Always respond in English, even if the user does not." },
-      { role: "user", content: t },
+      { role: "system", content: "You are Jeffrey, a helpful assistant. Maintain conversation context across messages and always respond in English." },
+      ...conversation,
     ],
   });
   return msg.reply(chat.choices[0].message.content);
