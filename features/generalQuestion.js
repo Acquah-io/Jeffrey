@@ -13,10 +13,11 @@ async function buildThreadContext(thread, { limit = 12 } = {}) {
     const ordered = Array.from(msgs.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
     const lines = [];
     for (const m of ordered) {
-      if (m.author.bot) continue; // skip bot chatter to save tokens
-      const name = m.author?.username || 'user';
+      const isJeffrey = thread.client?.user && m.author?.id === thread.client.user.id;
+      if (m.author.bot && !isJeffrey) continue; // skip other bots but keep Jeffrey's replies
       const text = (m.content || '').trim();
       if (!text) continue;
+      const name = isJeffrey ? 'Jeffrey' : (m.author?.username || 'user');
       lines.push(`${name}: ${text}`);
     }
     const ctx = lines.join('\n');
